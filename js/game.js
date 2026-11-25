@@ -47,7 +47,7 @@ function attachTooltip(el, getCreature) {
 //  TEAM BUILDER
 // =====================================================================
 // slots[pos] = creature id; looks[id] = which picture to use
-const builder = { slots: {}, looks: {}, selected: null };
+const builder = { slots: {}, looks: {}, selected: null, ult: "nuclear" };
 Rules.POSITIONS.forEach((p) => { builder.slots[p] = null; });
 
 try {
@@ -55,6 +55,7 @@ try {
   if (saved) {
     Rules.POSITIONS.forEach((p) => { builder.slots[p] = saved.slots[p] && byId(saved.slots[p]) ? saved.slots[p] : null; });
     builder.looks = saved.looks || {};
+    if (saved.ult && CONFIG.ultimates[saved.ult]) builder.ult = saved.ult;
     if (saved.difficulty) $("difficulty").value = saved.difficulty;
   }
 } catch (e) { /* no saved team */ }
@@ -62,7 +63,7 @@ try {
 function saveTeam() {
   try {
     localStorage.setItem("volleystars-team-v2", JSON.stringify({
-      slots: builder.slots, looks: builder.looks, difficulty: $("difficulty").value,
+      slots: builder.slots, looks: builder.looks, difficulty: $("difficulty").value, ult: builder.ult,
     }));
   } catch (e) { /* storage not available */ }
 }
@@ -169,7 +170,20 @@ function renderBuilderGrid() {
   });
 }
 
+function renderUltPick() {
+  const box = $("ultPick");
+  box.innerHTML = "";
+  Object.entries(CONFIG.ultimates).forEach(([id, u]) => {
+    const b = document.createElement("button");
+    b.className = "ult-card" + (builder.ult === id ? " on" : "");
+    b.innerHTML = `<b>${u.name}</b><span>${u.text}</span>`;
+    b.addEventListener("click", () => { builder.ult = id; Sound.play("click"); renderBuilder(); });
+    box.appendChild(b);
+  });
+}
+
 function renderBuilder() {
+  renderUltPick();
   const count = Rules.POSITIONS.filter((p) => builder.slots[p]).length;
   renderRoster();
   renderBuilderGrid();
@@ -234,11 +248,11 @@ function startMatch() {
   matchToken++;
   M = {
     diff, smart: d.smart,
-    player: Rules.makeTeam("player", at, 1),
-    cpu: Rules.makeTeam("cpu", AI.buildTeam(CREATURES), d.statMult),
+    player: Rules.makeTeam("player", at, 1, builder.ult),
+    cpu: Rules.makeTeam("cpu", AI.buildTeam(CREATURES), d.statMult, Object.keys(CONFIG.ultimates)[Math.floor(Math.random() * 3)]),
     score: { player: 0, cpu: 0 },
     serving: Math.random() < 0.5 ? "player" : "cpu",
-    pending: null, armed: null, freeOn: false,
+    pending: null, armed: null, freeOn: false, ultArmed: false,
     mom: 0, poss: null, fx: new Set(),
     ball: { x: 50, y: 50, gy: 60 },
   };
@@ -249,6 +263,7 @@ function startMatch() {
   updateScore();
   buildFlames();
   setMomentum(0);
+  updateUltHUD();
   refreshControls();
   log(`Match start! ${M.serving === "player" ? "You serve" : "CPU serves"} first. First to ${CONFIG.pointsToWin}.`);
   matchLoop(matchToken);
@@ -309,6 +324,8 @@ function updateStatus() {
       el.classList.toggle("roots", c.active.id === "deepRoots" && !!T.buffs.deepRoots);
       el.classList.toggle("stampede", !!T.buffs.stampede);
       el.classList.toggle("poisoned", c.poison > 0);
+      el.classList.toggle("recovering", !!c.recovering);
+      el.classList.toggle("fortress", !!T.buffs.fortress && Rules.isFront(p));
       el.classList.toggle("roots", (c.active.id === "deepRoots" && !!T.buffs.deepRoots) || (c.active.id === "cactusCover" && !!T.buffs.cactusCover));
     });
   });
@@ -325,6 +342,7 @@ function updateScore() {
 const WORDS = {
   bump: ["BUMP", "w-bump"], set: ["SET", "w-set"], spike: ["SPIKE", "w-spike"],
   free: ["FREE BALL", "w-free"], serve: ["SERVE", "w-serve"], sneaky: ["SNEAKY ATTACK", "w-sneaky"],
+  block: ["BLOCK?", "w-bump"],
 };
 function setStep(side, touch, word) {
   const [w, cls] = WORDS[word];
@@ -409,6 +427,13 @@ function setMomentum(v) {
 }
 function swing(side, n, pos, text) {
   if (n <= 0) return;
+  const T = teamOf(side);
+  if (T.buffs.comboStar) n *= 2; // Combo Star ultimate
+  const wasReady = Rules.ultReady(T);
+  Rules.chargeUlt(T, n);
+  if (!wasReady && Rules.ultReady(T)) { Sound.play("perfect"); log(`<span class="abil">${side === "player" ? "Your" : "CPU's"} ultimate is ready!</span>`); }
+  updateUltHUD();
+  Sound.play("swing");
   setMomentum(M.mom + (side === "player" ? n : -n));
   if (text) pop(side, pos, text, "passive");
 }
@@ -647,10 +672,19 @@ function clearRallyFx() {
 // drawn bigger (chunkier) and with more shake the more power and momentum there is.
 const BOOM_OF = { fire: "fire", flame: "fire", shadow: "shadow", toxic: "toxic", tidal: "tidal", seed: "seed", lantern: "lantern" };
 const WAVE_COLOR = { fire: "#ff6a00", flame: "#ffb020", shadow: "#b14dff", toxic: "#7dff5a", tidal: "#4fc3ff", seed: "#5fd35f", lantern: "#ff8c1a", spark: "#ffd65c" };
-function spikeImpact(pt, power, level) {
-  const tier = power >= 105 || level >= 5 ? 3 : power >= 88 || level >= 3 ? 2 : power >= 70 ? 1 : 0;
+function spikeImpact(pt, power, level, nuke = false) {
+  // Big explosions only for genuinely huge spikes (about one every three rallies)
+  const tier = nuke || power >= CONFIG.bigBoomPower ? 3 : power >= CONFIG.boomPower ? 2 : power >= 80 ? 1 : 0;
+  Sound.play(nuke ? "nuke" : tier >= 3 ? "bigboom" : tier === 2 ? "boom" : tier === 1 ? "dig" : "spark");
+  if (nuke) {
+    const S0 = fxScale();
+    playSprite("boom_fire", pt.x, pt.y + 2, { scale: S0 + 3, frameMs: 75 });
+    setTimeout(() => M && playSprite("boom_fire", pt.x - 4, pt.y + 10, { scale: S0 + 1, frameMs: 70 }), 120);
+    setTimeout(() => M && playSprite("boom_fire", pt.x + 4, pt.y + 8, { scale: S0 + 1, frameMs: 70 }), 200);
+    setTimeout(() => M && flash("#ffffff"), 150);
+  }
   const kinds = [...M.fx];
-  if (!kinds.length) kinds.push(level >= 1 || tier >= 2 ? "flame" : "spark");
+  if (!kinds.length) kinds.push(tier >= 2 ? "flame" : "spark");
   const x = pt.x, y = pt.y + 8, gy = pt.gy;
   const S = fxScale();
   if (tier >= 1) courtShake(["s", "s", "m", "l"][tier]);
@@ -671,6 +705,70 @@ function spikeImpact(pt, power, level) {
   if (tier >= 2) streaks(x, y, WAVE_COLOR[kinds[0]], 6 + tier * 3, 5 + tier);
   if (tier >= 2) flash(WAVE_COLOR[kinds[0]]);
   if (tier >= 3) flash("#ffffff");
+}
+
+// ---------- ultimates ----------
+function updateUltHUD() {
+  if (!M) return;
+  [["player", "Player"], ["cpu", "Cpu"]].forEach(([side, k]) => {
+    const T = teamOf(side);
+    $("ultName" + k).textContent = CONFIG.ultimates[T.ult].name.toUpperCase() + (T.buffs.comboStar && T.ult === "comboStar" || T.buffs.fortress && T.ult === "fortress" ? " · ACTIVE" : "");
+    $("ultFill" + k).style.width = (T.ultCharge / CONFIG.ultMax) * 100 + "%";
+    $("ultFill" + k).parentElement.parentElement.classList.toggle("full", Rules.ultReady(T));
+  });
+}
+// When can the player fire their ultimate right now?
+function ultUsable() {
+  const p = M && M.pending;
+  if (!p || !Rules.ultReady(M.player)) return false;
+  const u = M.player.ult;
+  if (u === "nuclear") return !!(p.canSpike && !M.freeOn && !p.serve && !p.blockChoice);
+  if (u === "comboStar") return !M.player.buffs.comboStar;
+  if (u === "fortress") return !M.player.buffs.fortress;
+  return false;
+}
+function renderUltButton() {
+  const b = $("ultBtn");
+  const show = ultUsable() || M.ultArmed;
+  b.classList.toggle("hidden", !show);
+  if (!show) return;
+  b.textContent = (M.ultArmed ? "✓ " : "") + CONFIG.ultimates[M.player.ult].name.toUpperCase() + (M.ultArmed ? " ARMED" : "!");
+  b.classList.toggle("armed", M.ultArmed);
+}
+$("ultBtn").addEventListener("click", () => {
+  if (!M || !M.pending) return;
+  const u = M.player.ult;
+  if (u === "nuclear") { M.ultArmed = !M.ultArmed; Sound.play("click"); refreshControls(); return; }
+  if (!ultUsable()) return;
+  Rules.useUlt(M.player);
+  ultFx("player", u);
+  const p = M.pending;
+  if (u === "fortress" && p.blockChoice) { // the whole front row blocks: no need to pick
+    M.pending = null; refreshControls(); p.resolve({ type: "block", target: null }); return;
+  }
+  refreshControls();
+});
+function ultFx(side, u) {
+  const T = teamOf(side);
+  updateUltHUD();
+  updateStatus();
+  Sound.play("ult");
+  popAt(side === "player" ? 27 : 73, 18, CONFIG.ultimates[u].name + "!", "ult");
+  log(`<span class="abil">${side === "player" ? "You" : "CPU"} unleashed ${CONFIG.ultimates[u].name}!</span>`);
+  flash(u === "fortress" ? "#7ab8ff" : u === "comboStar" ? "#ffe066" : "#ffffff");
+  if (u === "fortress") {
+    Sound.play("shield");
+    Rules.FRONT.forEach((bp) => {
+      const f = feet(side, bp);
+      const el = playSprite("shield", side === "player" ? 47 : 53, f.y - 9, { loop: true, frameMs: 110 });
+      el.classList.add("shield-fx");
+      playSprite("puff_gold", f.x, f.y - 8);
+    });
+  }
+  if (u === "comboStar") {
+    Rules.POSITIONS.forEach((p) => { const h = headPt(side, p); playSprite("sparkle", h.x, h.y + 6); });
+  }
+  if (u === "nuclear") courtShake("m");
 }
 
 // ---------- abilities (player) ----------
@@ -744,7 +842,7 @@ function askServeType() {
 
 function clearAuras() {
   elOf.forEach((el) => {
-    el.classList.remove("pick-mate", "pick-opp", "suggest", "armed", "blocker-warn");
+    el.classList.remove("pick-mate", "pick-opp", "suggest", "armed", "blocker-warn", "pick-block");
     el.style.setProperty("--k", 0);
   });
 }
@@ -754,9 +852,19 @@ function refreshControls() {
   const p = M.pending;
   clearAuras();
   renderAbilityButtons();
+  renderUltButton();
   $("freeToggle").classList.add("hidden");
+  $("noBlock").classList.add("hidden");
   if (!p) return;
   if (M.armed) elOf.get(M.armed.c).classList.add("armed");
+
+  if (p.blockChoice) {
+    // "Read the spike": pick one front-row blocker, or no block
+    setStep("player", 0, "block");
+    Rules.FRONT.forEach((bp) => elOf.get(M.player.at[bp]).classList.add("pick-block"));
+    $("noBlock").classList.remove("hidden");
+    return;
+  }
 
   const markOpp = (fn, list = Rules.POSITIONS) => list.forEach((q) => {
     const el = elOf.get(M.cpu.at[q]);
@@ -793,6 +901,7 @@ function refreshControls() {
     Rules.POSITIONS.forEach((q) => {
       if (q === p.holderPos) return;
       const m = M.player.at[q];
+      if (m.recovering) return; // still getting back into position after blocking
       const el = elOf.get(m);
       el.classList.add("pick-mate");
       const good = p.touch === 1 ? Rules.has(m, "setter") : Rules.has(m, "spiker") && m.winded === 0;
@@ -824,7 +933,9 @@ function onCreatureClick(side, c) {
   const team = teamOf(side);
   const pos = posOf(team, c);
   let action = null;
-  if (p.serve && side === "cpu") action = { type: "serve", target: pos };
+  if (p.blockChoice) {
+    if (side === "player" && el.classList.contains("pick-block")) action = { type: "block", target: pos };
+  } else if (p.serve && side === "cpu") action = { type: "serve", target: pos };
   else if (side === "player" && el.classList.contains("pick-mate")) {
     const special = M.armed && SET_ABILITIES.includes(M.armed.id) ? M.armed.id : null;
     action = { type: p.touch === 1 ? "bump" : "set", target: pos, special };
@@ -832,19 +943,37 @@ function onCreatureClick(side, c) {
     if (M.armed && M.armed.id === "sneakySeed") action = { type: "sneaky", target: pos, special: "sneakySeed" };
     else if (p.canSpike && !M.freeOn) {
       const special = M.armed && SPIKE_ABILITIES.includes(M.armed.id) ? M.armed.id : null;
-      action = { type: "spike", target: pos, special };
+      action = { type: "spike", target: pos, special, ult: M.ultArmed };
     } else action = { type: "free", target: pos };
   }
   if (!action) return;
+  Sound.play("click");
   M.pending = null;
   M.armed = null;
   M.freeOn = false;
+  M.ultArmed = false;
   tip.classList.add("hidden");
   refreshControls();
   p.resolve(action);
 }
 
-$("freeToggle").addEventListener("click", () => { if (M && M.pending) { M.freeOn = !M.freeOn; refreshControls(); } });
+$("freeToggle").addEventListener("click", () => { if (M && M.pending) { M.freeOn = !M.freeOn; if (M.freeOn) M.ultArmed = false; refreshControls(); } });
+$("noBlock").addEventListener("click", () => {
+  const p = M && M.pending;
+  if (!p || !p.blockChoice) return;
+  Sound.play("click");
+  M.pending = null;
+  refreshControls();
+  p.resolve({ type: "block", target: null });
+});
+// sound toggles
+function refreshSoundBtns() {
+  $("sfxBtn").classList.toggle("on", Sound.sfxOn);
+  $("musicBtn").classList.toggle("on", Sound.musicOn);
+}
+$("sfxBtn").addEventListener("click", () => { Sound.setSfx(!Sound.sfxOn); refreshSoundBtns(); });
+$("musicBtn").addEventListener("click", () => { Sound.setMusic(!Sound.musicOn); refreshSoundBtns(); });
+refreshSoundBtns();
 
 // ---------- timing bar (spikes and hard serves) ----------
 function runTiming(ctrl) {
@@ -874,7 +1003,9 @@ function runTiming(ctrl) {
     function onHit(e) {
       if (e) e.preventDefault();
       const d = Math.abs(pos - center);
-      finish(d <= perfect / 2 ? "perfect" : d <= good / 2 ? "good" : d <= good ? "ok" : d <= good * 2 ? "poor" : "miss");
+      const g = d <= perfect / 2 ? "perfect" : d <= good / 2 ? "good" : d <= good ? "ok" : d <= good * 2 ? "poor" : "miss";
+      Sound.play(g === "perfect" ? "perfect" : g === "good" ? "good" : g === "ok" ? "click" : "miss");
+      finish(g);
     }
     function onKey(e) { if (e.code === "Space") onHit(e); }
     function step(now) {
@@ -915,10 +1046,14 @@ async function matchLoop(token) {
       updateScore();
       updateStatus();
       log(`<span class="point">Point ${winner === "player" ? "YOU" : "CPU"}: ${reason} (${M.score.player}–${M.score.cpu})</span>`);
+      Sound.play("whistle");
+      setTimeout(() => Sound.play(winner === "player" ? "cheer" : "lose"), 250);
+      updateUltHUD();
       const { player: a, cpu: b } = M.score;
       const over = (a >= CONFIG.pointsToWin || b >= CONFIG.pointsToWin) && Math.abs(a - b) >= CONFIG.winBy;
       await showBanner(winner === "player" ? "POINT!" : "CPU POINT", reason + (sideOut && !over ? " · Side out, rotate!" : ""), winner !== "player");
       if (over) {
+        if (a > b) Sound.play("win");
         $("endTitle").textContent = a > b ? "You win! 🏐" : "CPU wins!";
         $("endScore").textContent = `Final score: ${a} – ${b}`;
         $("endOverlay").classList.remove("hidden");
@@ -978,6 +1113,7 @@ async function playRally() {
   else pop(offSide, 1, "Float serve", "passive");
   await wait(150);
   const sv = Rules.serve(off, serveType, timing);
+  Sound.play("serve");
   setHolder(null);
   sEl.style.left = feet(offSide, 1).x + "%"; // walk back in
   if (sv.fault) {
@@ -1010,9 +1146,21 @@ async function playRally() {
         playSprite("puff_seed", feet(side, coverer).x, feet(side, coverer).y - 6);
         incoming.pos = coverer;
       }
+      if (T.at[incoming.pos].recovering) {
+        // the blocker is still landing: a teammate has to dive for it
+        const np = Rules.availablePos(T, incoming.pos);
+        pop(side, incoming.pos, "Recovering!", "passive");
+        await flyBall(headPt(side, np), 200, 4);
+        incoming.pos = np;
+        incoming.aim *= CONFIG.recoverCoverMult;
+      }
       setBallFx([]);
+      // CPU fires Combo Star at the start of a possession
+      if (side === "cpu" && Rules.ultReady(T) && T.ult === "comboStar" && Math.random() < 0.7) { Rules.useUlt(T); ultFx("cpu", "comboStar"); }
       const rc = T.at[incoming.pos];
       const r = Rules.receive(T, incoming.pos, incoming.power, incoming.kind, incoming.aim);
+      T.buffs.allBack = false;
+      Sound.play(r.error ? "shank" : "dig");
       if (r.error) {
         anim(rc, "shake");
         const f = feet(side, incoming.pos);
@@ -1071,6 +1219,34 @@ async function playRally() {
     const hc = T.at[holder];
     const canSpike = isSet && Rules.has(hc, "spiker");
 
+    // ----- the defending team picks a blocker before the spike -----
+    if (canSpike) {
+      O.blockerPos = null;
+      if (other(side) === "player") {
+        if (!O.buffs.fortress) {
+          setStep("cpu", touch, "spike");
+          await wait(350);
+          const choice = await askPlayer({ blockChoice: true, holderPos: null });
+          checkAlive(token);
+          if (!O.buffs.fortress) O.blockerPos = choice.target;
+        }
+      } else {
+        if (!O.buffs.fortress && Rules.ultReady(O) && O.ult === "fortress" && (levelFor(side) >= 2 || Math.random() < 0.4)) {
+          Rules.useUlt(O); ultFx("cpu", "fortress");
+        }
+        O.blockerPos = AI.chooseBlocker(O, T, holder, M.smart);
+      }
+      O.buffs.allBack = !O.blockerPos && !O.buffs.fortress;
+      if (O.blockerPos) {
+        elOf.get(O.at[O.blockerPos]).classList.add("blocking");
+        pop(other(side), O.blockerPos, "Blocking", "passive");
+      } else if (O.buffs.allBack) {
+        Rules.POSITIONS.forEach((p) => anim(O.at[p], "dig"));
+        popAt(other(side) === "player" ? 27 : 73, 8, "Everyone back!", "passive");
+      }
+      setHolder(side, holder);
+    }
+
     let action;
     if (side === "player") {
       action = await askPlayer({ holderPos: holder, touch, canSpike, quality: q });
@@ -1080,9 +1256,12 @@ async function playRally() {
       await wait(600);
       action = AI.decide(T, O, holder, touch, isSet, q, levelFor(side), M.smart);
       if (action.type === "sneaky") setStep("cpu", touch, "sneaky");
+      if (action.type === "free" && canSpike && O.buffs.fortress) popAt(73, 8, "Too scared to spike!", "passive");
+      if (action.type === "spike" && Rules.ultReady(T) && T.ult === "nuclear") action.ult = true;
     }
     if (action.special) {
       Rules.useAbility(T, holder);
+      Sound.play({ fireball: "fire", tidalSet: "water", venomSpike: "poison", lanternSet: "spook", hornWall: "shield" }[action.special] || "ability");
       abilityFx(side, T, holder);
       setBallFx([...M.fx, FX_OF[action.special]]);
       if (action.special !== "sneakySeed") swing(side, 1, holder);
@@ -1094,6 +1273,7 @@ async function playRally() {
       const mate = T.at[action.target];
       const p = asSet ? Rules.set(T, holder, action.target, q, action.special === "tidalSet", action.special === "lanternSet") : Rules.bump(T, holder, action.target, q);
       anim(hc, asSet ? "jump" : "dig");
+      Sound.play(asSet ? "set" : "bump");
       setHolder(null);
       if (p.error) {
         const mid = feet(side, action.target);
@@ -1121,15 +1301,34 @@ async function playRally() {
       pop(side, holder, t.label, timing === "perfect" ? "big" : timing === "poor" || timing === "miss" ? "bad" : "good");
       const comboAtHit = levelFor(side);
       swing(side, t.combo, holder);
+      if (action.ult) {
+        Rules.useUlt(T);
+        T.nuke = true;
+        ultFx(side, "nuclear");
+        setBallFx([...M.fx, "fire"]);
+      }
+      if (O.blockerPos) anim(O.at[O.blockerPos], "jump");
+      if (O.buffs.fortress) Rules.FRONT.forEach((bp) => anim(O.at[bp], "jump"));
+      Sound.play("spike");
       await wait(180);
       setHolder(null);
       const res = Rules.spike(T, holder, q, O, action.target, timing, action.special, comboAtHit);
+      const wasNuke = !!T.nuke;
+      T.nuke = false;
+      Rules.clearRecovering(T); // the attackers' own blocker is back in position
+      elOf.forEach((el) => el.classList.remove("blocking"));
+      // a blocker who got beaten is still landing: out of the next possession
+      if (!res.out && !res.blocked && O.blockerPos && !O.buffs.fortress) {
+        O.at[O.blockerPos].recovering = true;
+      }
+      O.blockerPos = null;
       popPassives(side, holder, res.passives);
       updateStatus();
       const tgt = headPt(other(side), action.target);
       if (res.out) {
         await flyBall({ x: side === "player" ? 99 : 1, y: tgt.y + 4, gy: tgt.gy + 4 }, 450, 6);
         popAt(side === "player" ? 92 : 8, tgt.y, "OUT!", "bad");
+        Sound.play("out");
         log(`${who(side, hc)} spikes… out!`);
         await wait(400);
         return { winner: other(side), reason: `${sideWord(side)} ${hc.name}'s spike went out` };
@@ -1140,6 +1339,7 @@ async function playRally() {
         anim(blocker, "jump");
         await flyBall({ x: side === "player" ? 48 : 52, y: bp.y - 4, gy: bp.gy }, 260, 2);
         pop(other(side), res.blockerPos, "BLOCKED!", "big");
+        Sound.play("block");
         popPassives(other(side), res.blockerPos, res.blockerPassives);
         playSprite("puff_gold", side === "player" ? 49 : 51, bp.y + 6);
         streaks(side === "player" ? 49 : 51, bp.y + 6, "#bfeaff", 10, 6);
@@ -1152,9 +1352,10 @@ async function playRally() {
         return { winner: other(side), reason: `${sideWord(other(side))} ${blocker.name} blocked it` };
       }
       const lvl = levelFor(side);
-      log(`${who(side, hc)} spikes${lvl >= 4 ? " with huge power" : ""}!`);
-      await flyBall(tgt, Math.max(220, 400 - lvl * 30), 4);
-      spikeImpact(tgt, res.power, lvl);
+      log(`${who(side, hc)} spikes${lvl >= 4 || wasNuke ? " with huge power" : ""}!`);
+      if (res.power >= CONFIG.boomPower) Sound.play("whoosh");
+      await flyBall(tgt, wasNuke ? 200 : Math.max(220, 400 - lvl * 30), 4);
+      spikeImpact(tgt, res.power, lvl, wasNuke);
       if (res.poison) {
         const victim = O.at[action.target];
         victim.poison = 3; // this rally + the next two
@@ -1172,6 +1373,8 @@ async function playRally() {
     if (action.type === "sneaky") {
       anim(hc, "jump");
       setHolder(null);
+      Rules.clearRecovering(T);
+      Sound.play("spike");
       const res = Rules.sneaky(T, holder, levelFor(side));
       const tgt = headPt(other(side), action.target);
       if (res.out) {
@@ -1189,6 +1392,11 @@ async function playRally() {
     // ----- free ball -----
     anim(hc, "dig");
     setHolder(null);
+    Rules.clearRecovering(T);
+    elOf.forEach((el) => el.classList.remove("blocking"));
+    O.blockerPos = null;
+    updateStatus();
+    Sound.play("bump");
     const res = Rules.freeBall(T, holder);
     const tgt = headPt(other(side), action.target);
     if (res.out) {
@@ -1207,7 +1415,7 @@ function backToBuilder() {
   if (M && M.pending) { const p = M.pending; M.pending = null; p.resolve({ type: "abort" }); }
   if (M && M.cancelServe) M.cancelServe();
   M = null;
-  ["timing", "banner", "servePick", "endOverlay", "match"].forEach((id) => $(id).classList.add("hidden"));
+  ["timing", "banner", "servePick", "endOverlay", "match", "ultBtn", "noBlock"].forEach((id) => $(id).classList.add("hidden"));
   $("builder").classList.remove("hidden");
   tip.classList.add("hidden");
   renderBuilder();

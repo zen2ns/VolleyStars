@@ -31,6 +31,9 @@
           <div class="row-labels"><span>Back row</span><span>Front row</span><span class="net-label">Net ▸</span></div>
           <div id="builderGrid" class="bgrid"></div>
         </div>
+        <h2 class="ult-title">Team ultimate</h2>
+        <p class="muted small">Good plays charge your ultimate meter. When it's full, unleash it.</p>
+        <div id="ultPick" class="ult-pick"></div>
         <div class="builder-controls">
           <label>CPU difficulty
             <select id="difficulty">
@@ -50,7 +53,10 @@
   <!-- ================= MATCH ================= -->
   <section id="match" class="screen wide hidden">
     <div class="hud">
-      <div class="score-box you"><span class="label">YOU</span><span id="scorePlayer">0</span><span id="servePlayer" class="serve-dot"></span></div>
+      <div class="score-box you">
+        <div class="score-line"><span class="label">YOU</span><span id="scorePlayer">0</span><span id="servePlayer" class="serve-dot"></span></div>
+        <div class="ult-meter"><div class="ult-name" id="ultNamePlayer"></div><div class="ult-bar"><div id="ultFillPlayer" class="ult-fill"></div></div></div>
+      </div>
       <div class="hud-mid">
         <div id="step" class="step">GET READY</div>
         <div class="hud-sub">
@@ -58,9 +64,16 @@
             <div id="power" class="momentum" title="Momentum: good plays swing it your way and power up your spikes"><div id="mFill" class="m-fill"></div><div class="m-center"></div></div>
             <span class="m-label cpu">CPU</span></div>
           <button id="freeToggle" class="btn toggle tiny hidden">Free ball instead</button>
+          <button id="noBlock" class="btn toggle tiny hidden">No block (everyone digs)</button>
+          <button id="ultBtn" class="ult-btn hidden"></button>
+          <button id="sfxBtn" class="btn toggle tiny on" title="Sound effects">SFX</button>
+          <button id="musicBtn" class="btn toggle tiny on" title="Music">MUSIC</button>
         </div>
       </div>
-      <div class="score-box cpu"><span id="serveCpu" class="serve-dot"></span><span id="scoreCpu">0</span><span class="label">CPU</span></div>
+      <div class="score-box cpu">
+        <div class="score-line"><span id="serveCpu" class="serve-dot"></span><span id="scoreCpu">0</span><span class="label">CPU</span></div>
+        <div class="ult-meter"><div class="ult-name" id="ultNameCpu"></div><div class="ult-bar"><div id="ultFillCpu" class="ult-fill"></div></div></div>
+      </div>
     </div>
 
     <div id="court" class="court">
@@ -100,7 +113,8 @@
       <span><i class="lg holder"></i>Has the ball</span>
       <span><i class="lg mate"></i>Pass to</span>
       <span><i class="lg opp"></i>Brighter red = more likely to drop it</span>
-      <span><i class="lg block"></i>Blocker in the way</span>
+      <span><i class="lg block"></i>Blocker / pick a blocker</span>
+      <span><i class="lg recover"></i>See-through = recovering from a block</span>
       <span><i class="lg ready"></i>Ability ready</span>
       <span><i class="lg winded"></i>Faded = winded</span>
       <span><i class="lg poison"></i>Poisoned</span>
@@ -123,6 +137,7 @@
 
   <div id="tooltip" class="tooltip hidden"></div>
 
+  <script src="js/sound.js"></script>
   <script src="js/creatures.js"></script>
   <script src="js/rules.js"></script>
   <script src="js/game.js"></script>

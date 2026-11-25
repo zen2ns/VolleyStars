@@ -21,6 +21,23 @@ const CONFIG = {
   momentumMax: 6,
   comboPowerPerLevel: 0.07,
   adaptPerLevel: 0.08,      // "Adapting": each recent spike at a creature makes it dig this much better
+
+  // Blocking: the defending team picks ONE front-row blocker (or none) before each spike
+  chosenBlockMult: 1.6,     // the chosen blocker's block chance multiplier
+  noBlockDigBonus: 1.1,     // "No block": everyone stays back and digs better
+  recoverCoverMult: 0.85,   // a ball hit at a recovering blocker must be dug by a diving teammate
+
+  // Ultimates: good plays (momentum you gain) charge your meter; it stays between rallies
+  ultMax: 11,
+  ultimates: {
+    nuclear:  { name: "Nuclear Spike", text: "One spike with crazy power. Use it when any of your spikers is about to spike." },
+    comboStar:{ name: "Combo Star", text: "Doubles all the momentum your team gains for the rest of the rally." },
+    fortress: { name: "Iron Fortress", text: "Your whole front row blocks with huge power for the rest of the rally. Attackers will have to free ball." },
+  },
+
+  // Explosions: only spikes at least this strong get a big explosion (tuned to ~1 every 3 rallies)
+  boomPower: 100,
+  bigBoomPower: 120,
   comboPerfectPass: 75,     // pass/dig quality needed for a combo level
   comboPerfectSet: 80,      // set quality needed for a combo level
 
@@ -80,9 +97,22 @@ Rules.makeInstance = (base, lookIndex = 0) => ({
   spikes: 0,        // spikes this game (for Heating Up)
   read: 0,          // Adapting: goes up when spiked at, fades each rally
   poison: 0,        // Poisoned: rallies left of digging/passing worse
+  recovering: false,// blocked and is getting back into position: can't play the next possession
 });
 
-Rules.makeTeam = (side, at, mult) => ({ side, at, mult, buffs: {}, nineLivesUsed: false });
+Rules.makeTeam = (side, at, mult, ult = "nuclear") => ({ side, at, mult, buffs: {}, nineLivesUsed: false, ult, ultCharge: 0, blockerPos: null });
+Rules.clearRecovering = (team) => Rules.POSITIONS.forEach((p) => { team.at[p].recovering = false; });
+// Who can play a ball aimed at pos? Recovering blockers can't; the nearest free teammate dives.
+Rules.availablePos = (team, pos) => {
+  if (!team.at[pos].recovering) return pos;
+  let best = pos, bd = 99;
+  Rules.POSITIONS.forEach((p) => {
+    if (team.at[p].recovering) return;
+    const d = Rules.dist(team.side, p, pos);
+    if (d < bd) { bd = d; best = p; }
+  });
+  return best;
+};
 
 // End of every rally: tick down cooldowns and winded, clear rally buffs
 Rules.endRally = (team) => {
@@ -94,6 +124,8 @@ Rules.endRally = (team) => {
     if (c.poison > 0) c.poison--;
   });
   team.buffs = {};
+  team.blockerPos = null;
+  Rules.clearRecovering(team);
 };
 
 // ---------- abilities ----------
@@ -158,6 +190,7 @@ function receiveSkill(team, pos, kind) {
   let rooted = false;
   if (c.passive.id === "rooted" && !Rules.isFront(pos) && kind === "spike") { skill *= 1.15; rooted = true; }
   if (team.buffs.stampede) skill *= 1.15;
+  if (kind === "spike" && team.buffs.allBack) skill *= CONFIG.noBlockDigBonus;
   if (c.poison > 0) skill *= 0.72; // Poisoned
   const adapting = kind === "spike" && c.read > 0;
   if (adapting) skill *= 1 + CONFIG.adaptPerLevel * c.read;
@@ -196,6 +229,7 @@ Rules.receive = (team, pos, power, kind, aimMult = 1) => {
 // Chance that a ball of this power, aimed at pos, gets shanked (used for the red target glow)
 Rules.shankChance = (team, pos, power, kind, aimMult = 1) => {
   pos = Rules.coverPos(team, pos, kind);
+  if (team.at[pos].recovering) { pos = Rules.availablePos(team, pos); aimMult *= CONFIG.recoverCoverMult; }
   const c = team.at[pos];
   if (kind === "spike" && c.active.id === "deepRoots" && team.buffs.deepRoots) return 0;
   const r = receiveSkill(team, pos, kind);
@@ -269,6 +303,7 @@ Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
   if (c.winded > 0) power *= CONFIG.windedMult;
   if (special === "fireball") power *= 1.35;
   if (special === "venomSpike") power *= 1.1;
+  if (atk.nuke) power *= 1.8; // Nuclear Spike
   if (atk.buffs.tidal) power *= 1.15;
   if (c.passive.id === "heatingUp") power *= 1 + Math.min(0.2, 0.02 * c.spikes);
   power *= 1 + CONFIG.comboPowerPerLevel * combo;
@@ -280,10 +315,13 @@ Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
 // blocker in the target's lane gets a chance too.
 Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
   if (atk.buffs.spooked) return []; // Jack-o'-Lantern Set: nobody dares to block
+  const fortress = !!def.buffs.fortress;
+  if (!fortress && !def.blockerPos) return []; // "No block"
   const spiker = atk.at[fromPos];
   const a = Rules.aim(atk.side, fromPos, def.side, targetPos);
   const out = [];
   Rules.FRONT.forEach((bp) => {
+    if (!fortress && bp !== def.blockerPos) return; // only the chosen blocker jumps
     const b = def.at[bp];
     const bl = Rules.lane(def.side, bp);
     let weight = 0;
@@ -298,7 +336,10 @@ Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
     if (spiker.passive.id === "menacing") chance *= 0.65;
     if (!Rules.isFront(fromPos)) chance *= 0.7;
     chance *= a.deep ? 0.65 : 1.4; // hitting short into the front row runs into blockers
-    out.push({ pos: bp, chance: Math.min(0.8, chance * weight) });
+    chance *= CONFIG.chosenBlockMult;
+    if (fortress) { weight = Math.max(weight, 0.7); chance = Math.max(chance * 2.5, 0.45); }
+    if (atk.nuke) chance *= 0.5;
+    out.push({ pos: bp, chance: Math.min(fortress ? 0.85 : 0.8, chance * weight) });
   });
   return out;
 };
@@ -321,7 +362,7 @@ Rules.spike = (atk, fromPos, inQ, def, targetPos, timing, special, combo = 0) =>
   c.winded = 2; // weaker through the end of the next rally
 
   const a = Rules.aim(atk.side, fromPos, def.side, targetPos);
-  if (Math.random() < Rules.spikeOutChance(atk, fromPos, inQ, a.risk, timing)) {
+  if (Math.random() < Rules.spikeOutChance(atk, fromPos, inQ, a.risk, timing) * (atk.nuke ? 0.5 : 1)) {
     return { out: true, power, aimMult: a.aimMult, passives };
   }
   const spooked = !!atk.buffs.spooked;
@@ -407,6 +448,33 @@ AI.timing = (smart) => {
   return r < 0.96 ? "poor" : "miss";
 };
 
+// Pick a blocker before the other team spikes (or null = no block, everyone digs)
+AI.chooseBlocker = (def, atk, spikerPos, smart) => {
+  if (def.buffs.fortress) return null;
+  const sLane = Rules.lane(atk.side, spikerPos);
+  if (Math.random() > smart) return Math.random() < 0.3 ? null : Rules.FRONT[Math.floor(Math.random() * 3)];
+  let best = null, bestScore = 52; // below this, staying back to dig is better
+  Rules.FRONT.forEach((bp) => {
+    const b = def.at[bp];
+    const gap = Math.abs(Rules.lane(def.side, bp) - sLane);
+    let sc = (b.str + b.per) / 2 * (gap === 0 ? 1 : gap === 1 ? 0.75 : 0.4);
+    if (b.passive.id === "ironShell") sc *= 1.25;
+    if (b.active.id === "hornWall" && def.buffs.hornWall) sc *= 1.6;
+    if (Rules.has(b, "spiker")) sc *= 0.92; // blocking with a spiker costs your counterattack
+    if (sc > bestScore) { bestScore = sc; best = bp; }
+  });
+  return best;
+};
+
+// Ultimate meter
+Rules.ultReady = (team) => team.ultCharge >= CONFIG.ultMax;
+Rules.chargeUlt = (team, n) => { if (n > 0) team.ultCharge = Math.min(CONFIG.ultMax, team.ultCharge + n); };
+Rules.useUlt = (team) => {
+  team.ultCharge = 0;
+  if (team.ult === "comboStar") team.buffs.comboStar = true;
+  if (team.ult === "fortress") { team.buffs.fortress = true; team.blockerPos = null; }
+};
+
 // Use team-wide abilities at the start of a rally
 AI.preRally = (team, receivingServe, smart) => {
   const used = [];
@@ -427,9 +495,13 @@ AI.preRally = (team, receivingServe, smart) => {
 // Returns { type: "bump" | "set" | "spike" | "sneaky" | "free", target, special, timing }
 AI.decide = (team, opp, holder, touch, inIsSet, inQ, combo, smart) => {
   const c = team.at[holder];
-  const mates = Rules.POSITIONS.filter((p) => p !== holder);
+  const mates = Rules.POSITIONS.filter((p) => p !== holder && !team.at[p].recovering);
   const ctx = { holderPos: holder, touch, canSpike: inIsSet && Rules.has(c, "spiker") };
 
+  // An Iron Fortress is up: a smart attacker free balls instead of spiking into it
+  if (ctx.canSpike && opp.buffs.fortress && Math.random() < smart * 0.85) {
+    return { type: "free", target: AI.easyTarget(opp, smart, 40) };
+  }
   if (touch === 3 || ctx.canSpike) {
     if (ctx.canSpike) {
       let special = null;
@@ -440,7 +512,8 @@ AI.decide = (team, opp, holder, touch, inIsSet, inQ, combo, smart) => {
   }
 
   if (touch === 1) {
-    if (Math.random() > smart) return { type: "bump", target: mates[Math.floor(Math.random() * 5)] };
+    if (!mates.length) return { type: "free", target: AI.easyTarget(opp, smart, 40) };
+    if (Math.random() > smart) return { type: "bump", target: mates[Math.floor(Math.random() * mates.length)] };
     let best = mates[0], bestScore = -Infinity;
     mates.forEach((p) => {
       const m = team.at[p];
