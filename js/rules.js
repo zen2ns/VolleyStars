@@ -1,6 +1,6 @@
 // =====================================================================
 //  VolleyStars rules: all the math for serves, passes, sets, spikes,
-//  blocks, abilities and the CPU's brain. Tweak CONFIG to balance.
+//  blocks, combos, abilities and the CPU's brain. Tweak CONFIG to balance.
 // =====================================================================
 
 const CONFIG = {
@@ -8,6 +8,7 @@ const CONFIG = {
   winBy: 2,                 // ...and must lead by this many
   teamSize: 6,
   errorBelow: 10,           // a ball quality under this is an error (shank / bad set)
+  receiveBase: 54,          // higher = everyone digs more
 
   classBonus: 1.15,         // doing your class's job
   classPenalty: 0.82,       // receiving / setting without that class
@@ -15,20 +16,26 @@ const CONFIG = {
   backRowSetAdjust: -6,     // setting from the back row is a bit worse
   windedMult: 0.8,          // a spiker who spiked recently hits weaker
 
-  // Spike timing bar: power multiplier and extra chance to hit it out
+  // Combo: each good touch in one chain (pass -> set -> spike) adds a level.
+  // Every level makes the spike this much stronger. Resets when the ball crosses the net.
+  comboPowerPerLevel: 0.07,
+  comboPerfectPass: 75,     // pass/dig quality needed for a combo level
+  comboPerfectSet: 80,      // set quality needed for a combo level
+
+  // Timing bar results (spikes and hard serves)
   timing: {
-    perfect: { power: 1.2,  out: 0,    label: "PERFECT!" },
-    good:    { power: 1.1,  out: 0,    label: "Good hit" },
-    ok:      { power: 1.0,  out: 0.02, label: "Okay hit" },
-    poor:    { power: 0.85, out: 0.10, label: "Mistimed" },
-    miss:    { power: 0.7,  out: 0.25, label: "Whiffed!" },
+    perfect: { power: 1.2,  out: 0,    serveOut: 0.02, combo: 2, label: "PERFECT!" },
+    good:    { power: 1.1,  out: 0,    serveOut: 0.06, combo: 1, label: "Good hit" },
+    ok:      { power: 1.0,  out: 0.02, serveOut: 0.14, combo: 0, label: "Okay hit" },
+    poor:    { power: 0.85, out: 0.10, serveOut: 0.35, combo: 0, label: "Mistimed" },
+    miss:    { power: 0.7,  out: 0.25, serveOut: 0.6,  combo: 0, label: "Whiffed!" },
   },
 
   // CPU difficulty: stat multiplier and how smart its choices are (0-1)
   difficulty: {
-    easy:   { statMult: 0.88, smart: 0.25 },
-    normal: { statMult: 1.0,  smart: 0.6 },
-    hard:   { statMult: 1.1,  smart: 0.95 },
+    easy:   { statMult: 0.85, smart: 0.25 },
+    normal: { statMult: 0.94, smart: 0.5 },
+    hard:   { statMult: 1.0,  smart: 0.9 },
   },
 };
 
@@ -73,8 +80,6 @@ Rules.makeInstance = (base, lookIndex = 0) => ({
 
 Rules.makeTeam = (side, at, mult) => ({ side, at, mult, buffs: {}, nineLivesUsed: false });
 
-Rules.findPos = (team, id) => Rules.POSITIONS.find((p) => team.at[p].id === id);
-
 // End of every rally: tick down cooldowns and winded, clear rally buffs
 Rules.endRally = (team) => {
   Rules.POSITIONS.forEach((p) => {
@@ -102,47 +107,75 @@ Rules.abilityReady = (team, pos, ctx) => {
   }
   return false;
 };
+Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede"];
 Rules.useAbility = (team, pos) => {
   const c = team.at[pos];
   c.cooldown = ABILITY_COOLDOWN;
-  if (["hornWall", "deepRoots", "stampede"].includes(c.active.id)) team.buffs[c.active.id] = true;
+  if (Rules.BUFF_ABILITIES.includes(c.active.id)) team.buffs[c.active.id] = true;
 };
 
-// ---------- actions ----------
-
-// Serve from position 1. Strength = power, control = fewer faults.
-Rules.serve = (team) => {
+// ---------- serves ----------
+// type "float": always goes in, but is easy to receive.
+// type "hard": timing bar; strong, but can go out.
+Rules.serve = (team, type, timing = "ok") => {
   const s = team.at[1];
-  const faultChance = 0.03 + (100 - Rules.eff(team, s, "ctrl")) * 0.0012;
-  if (Math.random() < faultChance) return { fault: true };
-  return { fault: false, power: Rules.eff(team, s, "str") * 0.8 + Rules.rand(0, 20) };
+  if (type === "float") {
+    return { power: Rules.eff(team, s, "str") * 0.45 + 15 + Rules.rand(0, 10) };
+  }
+  const t = CONFIG.timing[timing];
+  const outChance = t.serveOut + (100 - Rules.eff(team, s, "ctrl")) * 0.001;
+  if (Math.random() < outChance) return { fault: true };
+  return { power: (Rules.eff(team, s, "str") * 0.85 + Rules.rand(0, 15)) * t.power };
 };
+Rules.servePowerEstimate = (team, type) => {
+  const s = team.at[1];
+  return type === "float" ? Rules.eff(team, s, "str") * 0.45 + 20 : (Rules.eff(team, s, "str") * 0.85 + 7) * 1.1;
+};
+
+// ---------- receiving ----------
+function receiveSkill(team, pos, kind) {
+  const c = team.at[pos];
+  const stat = kind === "spike" ? "def" : "per";
+  let skill = Rules.eff(team, c, stat) * 0.7 + Rules.eff(team, c, "ctrl") * 0.3;
+  let rooted = false;
+  if (c.passive.id === "rooted" && !Rules.isFront(pos) && kind === "spike") { skill *= 1.15; rooted = true; }
+  if (team.buffs.stampede) skill *= 1.15;
+  const cls = Rules.has(c, "receiver") ? CONFIG.classBonus : CONFIG.classPenalty;
+  return { skill: skill * cls, spread: c.passive.id === "steadyHooves" ? 10 : 20, rooted };
+}
 
 // Receiving a ball from the other side. kind = "serve" | "spike" | "free".
 // Spikes are dug with Defense; serves and free balls are read with Perception.
 // aimMult < 1 means the ball was aimed somewhere awkward.
 Rules.receive = (team, pos, power, kind, aimMult = 1) => {
   const c = team.at[pos];
-  if (kind === "spike" && c.passive && c.active.id === "deepRoots" && team.buffs.deepRoots) {
+  const passives = [];
+  if (kind === "spike" && c.active.id === "deepRoots" && team.buffs.deepRoots) {
     team.buffs.deepRoots = false;
-    return { quality: 95, special: "Deep Roots!" };
+    return { quality: 95, ability: "Deep Roots!", passives };
   }
-  const stat = kind === "spike" ? "def" : "per";
-  let skill = Rules.eff(team, c, stat) * 0.7 + Rules.eff(team, c, "ctrl") * 0.3;
-  if (c.passive.id === "rooted" && !Rules.isFront(pos) && kind === "spike") skill *= 1.15;
-  if (team.buffs.stampede) skill *= 1.15;
-  const cls = Rules.has(c, "receiver") ? CONFIG.classBonus : CONFIG.classPenalty;
-  const spread = c.passive.id === "steadyHooves" ? 10 : 20;
-  let quality = 50 + (skill * cls * aimMult - power) + Rules.rand(-spread, spread);
+  const r = receiveSkill(team, pos, kind);
+  if (r.rooted) passives.push("Rooted");
+  if (c.passive.id === "steadyHooves") passives.push("Steady Hooves");
+  const quality = CONFIG.receiveBase + (r.skill * aimMult - power) + Rules.rand(-r.spread, r.spread);
   if (quality < CONFIG.errorBelow) {
-    const hasFeli = Rules.POSITIONS.some((p) => team.at[p].passive.id === "nineLives");
-    if (hasFeli && !team.nineLivesUsed) {
+    const feliPos = Rules.POSITIONS.find((p) => team.at[p].passive.id === "nineLives");
+    if (feliPos && !team.nineLivesUsed) {
       team.nineLivesUsed = true;
-      return { quality: 30, special: "Nine Lives!" };
+      return { quality: 45, savedBy: feliPos, passives: ["Nine Lives!"] };
     }
-    return { quality: 0, error: true };
+    return { quality: 0, error: true, passives };
   }
-  return { quality: Rules.clamp(quality, 0, 100) };
+  return { quality: Rules.clamp(quality, 0, 100), passives };
+};
+
+// Chance that a ball of this power, aimed at pos, gets shanked (used for the red target glow)
+Rules.shankChance = (team, pos, power, kind, aimMult = 1) => {
+  const c = team.at[pos];
+  if (kind === "spike" && c.active.id === "deepRoots" && team.buffs.deepRoots) return 0;
+  const r = receiveSkill(team, pos, kind);
+  const mean = CONFIG.receiveBase + r.skill * aimMult - power;
+  return Rules.clamp((CONFIG.errorBelow - mean + r.spread) / (2 * r.spread), 0, 1);
 };
 
 function farPenalty(team, c, from, to) {
@@ -155,20 +188,33 @@ Rules.bump = (team, from, to, inQ) => {
   const c = team.at[from];
   const spread = c.passive.id === "steadyHooves" ? 5 : 10;
   const q = inQ * 0.55 + Rules.eff(team, c, "ctrl") * 0.45 - farPenalty(team, c, from, to) + Rules.rand(-spread, spread);
-  return { quality: Rules.clamp(q, 0, 100), error: q < CONFIG.errorBelow };
+  return { quality: Rules.clamp(q, 0, 100), error: q < CONFIG.errorBelow, passives: spread === 5 ? ["Steady Hooves"] : [] };
 };
 
 // Touch 2 -> 3: a set. Setters are much better at it.
 Rules.set = (team, from, to, inQ, tidal = false) => {
   const c = team.at[from];
-  if (tidal) { team.buffs.tidal = true; return { quality: 100, special: "Tidal Set!" }; }
+  if (tidal) { team.buffs.tidal = true; return { quality: 100, passives: [] }; }
+  const passives = [];
   const cls = Rules.has(c, "setter") ? CONFIG.classBonus : CONFIG.classPenalty;
   let q = (inQ * 0.4 + Rules.eff(team, c, "ctrl") * 0.6) * cls - farPenalty(team, c, from, to);
-  if (!Rules.isFront(from)) q += c.passive.id === "flowingSets" ? 8 : CONFIG.backRowSetAdjust;
+  if (!Rules.isFront(from)) {
+    if (c.passive.id === "flowingSets") { q += 8; passives.push("Flowing Sets"); }
+    else q += CONFIG.backRowSetAdjust;
+  }
   q += Rules.rand(-10, 10);
-  return { quality: Rules.clamp(q, 0, 100), error: q < CONFIG.errorBelow };
+  return { quality: Rules.clamp(q, 0, 100), error: q < CONFIG.errorBelow, passives };
 };
 
+// ---------- combos ----------
+// How many combo levels a touch adds to the current chain
+Rules.comboGain = (kind, quality) => {
+  if (kind === "pass") return quality >= CONFIG.comboPerfectPass ? 1 : 0;
+  if (kind === "set") return quality >= CONFIG.comboPerfectSet ? 1 : 0;
+  return 0;
+};
+
+// ---------- spikes ----------
 // How risky / rewarding is aiming at targetPos from fromPos?
 // Corners and cross-court shots are harder to dig but easier to hit out.
 Rules.aim = (atkSide, fromPos, defSide, targetPos) => {
@@ -182,6 +228,19 @@ Rules.aim = (atkSide, fromPos, defSide, targetPos) => {
     risk: (deep ? 0.03 : 0) + (edge ? 0.02 : 0) + laneDiff * 0.015,
     aimMult: 1 - (deep ? 0.04 : 0) - (edge ? 0.04 : 0) - laneDiff * 0.03,
   };
+};
+
+// Spike power before randomness and timing. combo = combo level of this touch chain.
+Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
+  const c = atk.at[fromPos];
+  let power = Rules.eff(atk, c, "str") * (0.6 + inQ / 250);
+  if (!Rules.isFront(fromPos)) power *= CONFIG.backRowSpikeMult;
+  if (c.winded > 0) power *= CONFIG.windedMult;
+  if (special === "fireball") power *= 1.35;
+  if (atk.buffs.tidal) power *= 1.15;
+  if (c.passive.id === "heatingUp") power *= 1 + Math.min(0.2, 0.02 * c.spikes);
+  power *= 1 + CONFIG.comboPowerPerLevel * combo;
+  return power;
 };
 
 // Block chance for each defending front-row creature, based on the ball's path.
@@ -210,38 +269,59 @@ Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
   return out;
 };
 
+Rules.spikeOutChance = (atk, fromPos, inQ, aimRisk, timing) => {
+  const c = atk.at[fromPos];
+  return 0.01 + (100 - Rules.eff(atk, c, "ctrl")) * 0.001 + (100 - inQ) * 0.0008 + aimRisk + CONFIG.timing[timing].out;
+};
+
 // Spike! timing = "perfect" | "good" | "ok" | "poor" | "miss"
 // special = "fireball" | "shadowStrike" | null
-Rules.spike = (atk, fromPos, inQ, def, targetPos, timing, special) => {
+Rules.spike = (atk, fromPos, inQ, def, targetPos, timing, special, combo = 0) => {
   const c = atk.at[fromPos];
-  const t = CONFIG.timing[timing];
-  let power = Rules.eff(atk, c, "str") * (0.6 + inQ / 250) + Rules.rand(0, 12);
-  if (!Rules.isFront(fromPos)) power *= CONFIG.backRowSpikeMult;
-  if (c.winded > 0) power *= CONFIG.windedMult;
-  power *= t.power;
-  if (special === "fireball") power *= 1.35;
-  if (atk.buffs.tidal) { power *= 1.15; atk.buffs.tidal = false; }
-  if (c.passive.id === "heatingUp") power *= 1 + Math.min(0.2, 0.02 * c.spikes);
+  const passives = [];
+  if (c.passive.id === "heatingUp" && c.spikes > 0) passives.push("Heating Up");
+  let power = Rules.spikeBasePower(atk, fromPos, inQ, combo, special) + Rules.rand(0, 12);
+  power *= CONFIG.timing[timing].power;
+  atk.buffs.tidal = false;
   c.spikes++;
   c.winded = 2; // weaker through the end of the next rally
 
   const a = Rules.aim(atk.side, fromPos, def.side, targetPos);
-  const outChance = 0.01 + (100 - Rules.eff(atk, c, "ctrl")) * 0.001 + (100 - inQ) * 0.0008 + a.risk + t.out;
-  if (Math.random() < outChance) return { out: true, power, aimMult: a.aimMult };
-
+  if (Math.random() < Rules.spikeOutChance(atk, fromPos, inQ, a.risk, timing)) {
+    return { out: true, power, aimMult: a.aimMult, passives };
+  }
   if (special !== "shadowStrike") {
-    for (const b of Rules.blockChances(atk, fromPos, def, targetPos, power)) {
-      if (Math.random() < b.chance) return { blocked: true, blockerPos: b.pos, power };
+    const blocks = Rules.blockChances(atk, fromPos, def, targetPos, power);
+    if (blocks.length && c.passive.id === "menacing") passives.push("Menacing");
+    for (const b of blocks) {
+      if (Math.random() < b.chance) {
+        const bp = def.at[b.pos].passive.id === "ironShell" ? ["Iron Shell"] : [];
+        return { blocked: true, blockerPos: b.pos, power, passives, blockerPassives: bp };
+      }
     }
   }
-  return { power, aimMult: a.aimMult };
+  return { power, aimMult: a.aimMult, passives };
+};
+
+// Estimated chance a spike at targetPos wins the point (for the red target glow)
+Rules.killChance = (atk, fromPos, inQ, def, targetPos, combo, special) => {
+  const power = Rules.spikeBasePower(atk, fromPos, inQ, combo, special) * 1.1 + 6;
+  const a = Rules.aim(atk.side, fromPos, def.side, targetPos);
+  const out = Rules.spikeOutChance(atk, fromPos, inQ, a.risk, "good");
+  const blocks = special === "shadowStrike" ? [] : Rules.blockChances(atk, fromPos, def, targetPos, power);
+  const notBlocked = blocks.reduce((s, b) => s * (1 - b.chance), 1);
+  return {
+    kill: (1 - out) * notBlocked * Rules.shankChance(def, targetPos, power, "spike", a.aimMult),
+    blocks,
+    out,
+  };
 };
 
 // Felimelon's Sneaky Seed: attack on the 2nd touch. Soft, but catches them off guard.
-Rules.sneaky = (atk, fromPos) => {
+Rules.sneaky = (atk, fromPos, combo = 0) => {
   const c = atk.at[fromPos];
   if (Math.random() < 0.03) return { out: true };
-  return { power: 40 + Rules.eff(atk, c, "str") * 0.35 + Rules.rand(0, 10), aimMult: 0.75 };
+  return { power: (40 + Rules.eff(atk, c, "str") * 0.35 + Rules.rand(0, 10)) * (1 + CONFIG.comboPowerPerLevel * combo), aimMult: 0.75 };
 };
 
 // Free ball: a soft, easy-to-receive hit over the net.
@@ -254,49 +334,42 @@ Rules.freeBall = (team, pos) => {
 // ---------- CPU brain ----------
 const AI = {};
 
-AI.receiveSkill = (team, pos, kind) => {
-  const c = team.at[pos];
-  const stat = kind === "spike" ? "def" : "per";
-  const cls = Rules.has(c, "receiver") ? CONFIG.classBonus : CONFIG.classPenalty;
-  return (c[stat] * 0.7 + c.ctrl * 0.3) * cls;
-};
-
 AI.randomPos = () => Rules.POSITIONS[Math.floor(Math.random() * 6)];
 
 // Serve / free ball target: the weakest passer
-AI.easyTarget = (def, smart) => {
+AI.easyTarget = (def, smart, power = 50) => {
   if (Math.random() > smart) return AI.randomPos();
-  let best = 1, bestScore = Infinity;
+  let best = 1, bestScore = -Infinity;
   Rules.POSITIONS.forEach((p) => {
-    const sc = AI.receiveSkill(def, p, "serve") + Rules.rand(-6, 6);
-    if (sc < bestScore) { bestScore = sc; best = p; }
+    const sc = Rules.shankChance(def, p, power, "serve") + Rules.rand(0, 0.05);
+    if (sc > bestScore) { bestScore = sc; best = p; }
   });
   return best;
 };
 
-// Spike target: weak defenders, awkward spots, avoid big blockers and risky corners
-AI.spikeTarget = (atk, fromPos, def, smart) => {
+AI.serveType = (smart) => (Math.random() < 0.25 + 0.45 * smart ? "hard" : "float");
+
+// Spike target: the spot with the best chance to win the point
+AI.spikeTarget = (atk, fromPos, inQ, def, smart, combo, special) => {
   if (Math.random() > smart) return AI.randomPos();
-  const power = atk.at[fromPos].str * 0.9;
-  let best = 1, bestScore = Infinity;
+  let best = 1, bestScore = -Infinity;
   Rules.POSITIONS.forEach((p) => {
-    const a = Rules.aim(atk.side, fromPos, def.side, p);
-    const block = Rules.blockChances(atk, fromPos, def, p, power).reduce((s, b) => s + b.chance, 0);
-    const sc = AI.receiveSkill(def, p, "spike") * a.aimMult + a.risk * 250 + block * 150 + Rules.rand(-5, 5);
-    if (sc < bestScore) { bestScore = sc; best = p; }
+    const k = Rules.killChance(atk, fromPos, inQ, def, p, combo, special);
+    const sc = k.kill - k.out * 0.5 + Rules.rand(0, 0.04);
+    if (sc > bestScore) { bestScore = sc; best = p; }
   });
   return best;
 };
 
 AI.timing = (smart) => {
   const r = Math.random();
-  if (r < 0.1 + 0.25 * smart) return "perfect";
-  if (r < 0.35 + 0.4 * smart) return "good";
-  if (r < 0.85) return "ok";
-  return r < 0.97 ? "poor" : "miss";
+  if (r < 0.06 + 0.2 * smart) return "perfect";
+  if (r < 0.3 + 0.35 * smart) return "good";
+  if (r < 0.82) return "ok";
+  return r < 0.96 ? "poor" : "miss";
 };
 
-// Use team-wide abilities before/while defending
+// Use team-wide abilities at the start of a rally
 AI.preRally = (team, receivingServe, smart) => {
   const used = [];
   Rules.POSITIONS.forEach((p) => {
@@ -313,18 +386,18 @@ AI.preRally = (team, receivingServe, smart) => {
 
 // What does the CPU creature holding the ball do?
 // Returns { type: "bump" | "set" | "spike" | "sneaky" | "free", target, special, timing }
-AI.decide = (team, opp, holder, touch, inIsSet, smart) => {
+AI.decide = (team, opp, holder, touch, inIsSet, inQ, combo, smart) => {
   const c = team.at[holder];
   const mates = Rules.POSITIONS.filter((p) => p !== holder);
   const ctx = { holderPos: holder, touch, canSpike: inIsSet && Rules.has(c, "spiker") };
 
-  if (touch === 3 || (touch > 1 && ctx.canSpike)) {
+  if (touch === 3 || ctx.canSpike) {
     if (ctx.canSpike) {
       let special = null;
       if (Rules.abilityReady(team, holder, ctx) && Math.random() < smart * 0.8) special = c.active.id;
-      return { type: "spike", target: AI.spikeTarget(team, holder, opp, smart), special, timing: AI.timing(smart) };
+      return { type: "spike", target: AI.spikeTarget(team, holder, inQ, opp, smart, combo, special), special, timing: AI.timing(smart) };
     }
-    return { type: "free", target: AI.easyTarget(opp, smart) };
+    return { type: "free", target: AI.easyTarget(opp, smart, 40) };
   }
 
   if (touch === 1) {
@@ -340,10 +413,10 @@ AI.decide = (team, opp, holder, touch, inIsSet, smart) => {
 
   // touch 2
   if (c.active.id === "sneakySeed" && Rules.abilityReady(team, holder, ctx) && Math.random() < 0.3 * smart) {
-    return { type: "sneaky", target: AI.spikeTarget(team, holder, opp, smart), special: "sneakySeed" };
+    return { type: "sneaky", target: AI.easyTarget(opp, smart, 60), special: "sneakySeed" };
   }
   const spikers = mates.filter((p) => Rules.has(team.at[p], "spiker"));
-  if (!spikers.length) return { type: "free", target: AI.easyTarget(opp, smart) };
+  if (!spikers.length) return { type: "free", target: AI.easyTarget(opp, smart, 40) };
   let best = spikers[Math.floor(Math.random() * spikers.length)];
   if (Math.random() < smart) {
     let bestScore = -Infinity;

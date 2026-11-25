@@ -48,11 +48,17 @@
   </section>
 
   <!-- ================= MATCH ================= -->
-  <section id="match" class="screen hidden">
-    <div class="scoreboard">
-      <div class="team-score"><span class="label">You</span><span id="scorePlayer">0</span><span id="servePlayer" class="serve-dot">🏐</span></div>
-      <div class="vs muted small">First to <span id="target">15</span></div>
-      <div class="team-score"><span id="serveCpu" class="serve-dot">🏐</span><span id="scoreCpu">0</span><span class="label">CPU</span></div>
+  <section id="match" class="screen wide hidden">
+    <div class="hud">
+      <div class="score-box you"><span class="label">YOU</span><span id="scorePlayer">0</span><span id="servePlayer" class="serve-dot"></span></div>
+      <div class="hud-mid">
+        <div id="step" class="step">GET READY</div>
+        <div class="hud-sub">
+          <div id="power" class="power" title="Spike power from this combo chain"></div>
+          <button id="freeToggle" class="btn toggle tiny hidden">Free ball instead</button>
+        </div>
+      </div>
+      <div class="score-box cpu"><span id="serveCpu" class="serve-dot"></span><span id="scoreCpu">0</span><span class="label">CPU</span></div>
     </div>
 
     <div id="court" class="court">
@@ -67,37 +73,39 @@
       </div>
       <div class="net"><div class="post top"></div><div class="post bottom"></div></div>
       <div id="creatures"></div>
+      <div id="fxLayer"></div>
       <div id="ballShadow" class="ball-shadow"></div>
+      <div id="ballAura" class="ball-aura"></div>
       <div id="ball" class="ball"><img src="assets/volleyball.png" alt="ball"></div>
       <div id="banner" class="banner hidden"><div id="bannerTitle"></div><div id="bannerSub"></div></div>
-    </div>
-
-    <div class="action-bar">
-      <div class="prompt-wrap">
-        <div id="prompt" class="prompt">Get ready…</div>
-        <div id="aimInfo" class="aim-info"></div>
+      <div id="servePick" class="serve-pick hidden">
+        <div class="serve-title">Choose your serve</div>
+        <button id="serveFloat" class="serve-btn float"><b>Float</b><span>Always goes in. Easier to receive.</span></button>
+        <button id="serveHard" class="serve-btn hard"><b>Hard</b><span>Timing bar. Powerful, but can go out.</span></button>
       </div>
-      <div class="action-buttons">
-        <button id="freeToggle" class="btn toggle hidden">Free ball instead</button>
-      </div>
-    </div>
-
-    <div id="timing" class="timing hidden">
-      <div class="timing-label">Click, tap, or press <b>Space</b> when the marker hits the gold!</div>
-      <div id="timingTrack" class="timing-track">
-        <div id="timingGood" class="timing-good"></div>
-        <div id="timingPerfect" class="timing-perfect"></div>
-        <div id="timingMarker" class="timing-marker"></div>
+      <div id="timing" class="timing hidden">
+        <div class="timing-label">Click, tap or press <b>Space</b> on the gold!</div>
+        <div id="timingTrack" class="timing-track">
+          <div id="timingGood" class="timing-good"></div>
+          <div id="timingPerfect" class="timing-perfect"></div>
+          <div id="timingMarker" class="timing-marker"></div>
+        </div>
       </div>
     </div>
 
-    <div class="abilities-wrap">
-      <div class="small muted">Your abilities (they recharge after a couple rallies)</div>
-      <div id="abilityBar" class="ability-bar"></div>
+    <div class="legend">
+      <span><i class="lg holder"></i>Has the ball</span>
+      <span><i class="lg mate"></i>Pass to</span>
+      <span><i class="lg opp"></i>Brighter red = more likely to drop it</span>
+      <span><i class="lg block"></i>Blocker in the way</span>
+      <span><i class="lg ready"></i>Ability ready</span>
+      <span><i class="lg winded"></i>Faded = winded</span>
     </div>
 
-    <div id="log" class="log"></div>
-    <button id="quitMatch" class="btn secondary small-btn">Quit to team select</button>
+    <div class="under">
+      <div id="log" class="log"></div>
+      <button id="quitMatch" class="btn secondary small-btn">Quit to team select</button>
+    </div>
   </section>
 
   <!-- ================= END OF MATCH ================= -->

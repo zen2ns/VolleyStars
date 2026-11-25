@@ -12,8 +12,10 @@ A turn-based creature volleyball game that runs in the browser.
 
 ## How to play
 1. Place 6 creatures in positions 1–6. Spot 1 serves. You rotate clockwise each time you win the serve back.
-2. Serve by clicking a CPU creature.
+2. Serving: choose **Float** (always in, easy to receive) or **Hard** (timing bar, strong, can go out), then click a target.
 3. Receive → click a teammate to **bump** to → click a teammate to **set** → a spiker who got the set **spikes**.
-4. Spiking: click a CPU creature to aim (hover to see dig difficulty, out risk and block chance), then hit the
-   timing bar (click or Space) when the marker is in the gold.
-5. Abilities glow when usable. They recharge after a couple rallies. 💨 = winded (spiked recently, hits weaker).
+   The big text at the top always shows which touch you're on.
+4. Spiking: brighter red glow = more likely to drop it. Hover a target to see blockers (blue). Then hit the timing bar.
+5. Combo: perfect passes, perfect sets, abilities and perfect timing build spike power (the fiery aura on the ball).
+6. Abilities: when one can be used, a purple button pops up above that creature. A glowing name = ability ready.
+   A faded creature is winded (spiked recently and hits weaker).

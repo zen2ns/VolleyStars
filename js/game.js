@@ -171,6 +171,7 @@ async function wait(ms) { const t = matchToken; await sleep(ms); checkAlive(t); 
 const teamOf = (side) => M[side];
 const posOf = (team, c) => Rules.POSITIONS.find((p) => team.at[p] === c);
 const who = (side, c) => `<span class="${side === "player" ? "you" : "cpu"}">${side === "player" ? "Your" : "CPU's"} ${c.name}</span>`;
+const sideWord = (side) => (side === "player" ? "Your" : "CPU's");
 
 function log(html) {
   const line = document.createElement("div");
@@ -179,9 +180,9 @@ function log(html) {
 }
 
 // ---------- court geometry (percent of the court box) ----------
-const XS = { player: { back: 18.5, front: 39.5, serve: 3.5 }, cpu: { front: 60.5, back: 81.5, serve: 96.5 } };
-const LANE_Y = [33, 58, 83];
-const HEAD = 21; // how far above the feet the ball sits
+const XS = { player: { back: 17.75, front: 39.25, serve: 5 }, cpu: { front: 60.75, back: 82.25, serve: 95 } };
+const LANE_Y = [31, 59, 87];
+const HEAD = 23; // how far above the feet the ball sits
 
 function feet(side, pos) {
   return { x: XS[side][Rules.isFront(pos) ? "front" : "back"], y: LANE_Y[Rules.lane(side, pos)] };
@@ -206,43 +207,44 @@ function startMatch() {
     score: { player: 0, cpu: 0 },
     serving: Math.random() < 0.5 ? "player" : "cpu",
     pending: null, armed: null, freeOn: false,
+    combo: 0, fx: new Set(),
     ball: { x: 50, y: 50, gy: 60 },
   };
-  M.playerList = Rules.POSITIONS.map((p) => M.player.at[p]);
-  $("target").textContent = CONFIG.pointsToWin;
   $("log").innerHTML = "";
   $("builder").classList.add("hidden");
   $("match").classList.remove("hidden");
   buildCourt();
   updateScore();
+  setCombo(0);
   refreshControls();
-  log(`Match start! ${M.serving === "player" ? "You serve" : "CPU serves"} first.`);
+  log(`Match start! ${M.serving === "player" ? "You serve" : "CPU serves"} first. First to ${CONFIG.pointsToWin}.`);
   matchLoop(matchToken);
 }
 
 function buildCourt() {
   const holder = $("creatures");
   holder.innerHTML = "";
+  $("fxLayer").innerHTML = "";
   elOf.clear();
   ["player", "cpu"].forEach((side) => {
     Rules.POSITIONS.forEach((p) => {
       const c = teamOf(side).at[p];
       const el = document.createElement("div");
       el.className = `crt ${side}`;
-      el.innerHTML = `<div class="ring"></div><div class="jumper"><div class="bob"><img src="${c.img}" alt="${c.name}"></div></div><div class="tag"></div>`;
+      el.innerHTML = `<div class="shadow"></div><div class="jumper"><div class="bob"><img src="${c.img}" alt="${c.name}"></div></div><div class="tag">${c.name}</div>`;
       const bob = el.querySelector(".bob");
-      bob.style.animationDuration = (1.3 + Math.random() * 0.7).toFixed(2) + "s";
-      bob.style.animationDelay = (-Math.random() * 2).toFixed(2) + "s";
+      bob.style.animationDuration = (2 + Math.random() * 1.2).toFixed(2) + "s";
+      bob.style.animationDelay = (-Math.random() * 3).toFixed(2) + "s";
       el.addEventListener("click", () => onCreatureClick(side, c));
-      el.addEventListener("mouseenter", () => showAimInfo(side, c));
-      el.addEventListener("mouseleave", () => { $("aimInfo").textContent = ""; });
+      el.addEventListener("mouseenter", () => showBlockers(side, c));
+      el.addEventListener("mouseleave", clearBlockers);
       attachTooltip(el, () => c);
       holder.appendChild(el);
       elOf.set(c, el);
     });
   });
   placeAll();
-  updateTags();
+  updateStatus();
   setBall(headPt(M.serving, 1));
 }
 
@@ -258,13 +260,18 @@ function placeAll() {
   });
 }
 
-function updateTags() {
+// Winded = faded sprite; ability ready = glowing name; buff auras
+function updateStatus() {
   ["player", "cpu"].forEach((side) => {
+    const T = teamOf(side);
     Rules.POSITIONS.forEach((p) => {
-      const c = teamOf(side).at[p];
-      const icons = (c.winded > 0 ? '<span class="ico" title="Winded">💨</span>' : "") +
-        (c.cooldown === 0 ? '<span class="ico" title="Ability ready">✨</span>' : "");
-      elOf.get(c).querySelector(".tag").innerHTML = `${p}·${c.name}${icons}`;
+      const c = T.at[p];
+      const el = elOf.get(c);
+      el.classList.toggle("winded", c.winded > 0);
+      el.querySelector(".tag").classList.toggle("ready", c.cooldown === 0);
+      el.classList.toggle("hornwall", c.active.id === "hornWall" && !!T.buffs.hornWall);
+      el.classList.toggle("roots", c.active.id === "deepRoots" && !!T.buffs.deepRoots);
+      el.classList.toggle("stampede", !!T.buffs.stampede);
     });
   });
 }
@@ -274,6 +281,50 @@ function updateScore() {
   $("scoreCpu").textContent = M.score.cpu;
   $("servePlayer").classList.toggle("on", M.serving === "player");
   $("serveCpu").classList.toggle("on", M.serving === "cpu");
+}
+
+// ---------- HUD ----------
+const WORDS = {
+  bump: ["BUMP", "w-bump"], set: ["SET", "w-set"], spike: ["SPIKE", "w-spike"],
+  free: ["FREE BALL", "w-free"], serve: ["SERVE", "w-serve"], sneaky: ["SNEAKY ATTACK", "w-sneaky"],
+};
+function setStep(side, touch, word) {
+  const [w, cls] = WORDS[word];
+  const whoTxt = side === "cpu" ? '<span class="who">CPU · </span>' : side === "player" && word === "serve" ? "YOUR " : "";
+  const touchTxt = touch ? `<span class="t">TOUCH ${touch}/3 · </span>` : "";
+  $("step").innerHTML = `${whoTxt}${touchTxt}<span class="${cls}">${w}</span>`;
+  $("step").classList.toggle("cpu-turn", side === "cpu");
+}
+
+// ---------- combo / power aura ----------
+const AURA = [
+  null,
+  ["#fff3a0", "#ffcc33"],
+  ["#ffd060", "#ff9a1a"],
+  ["#ffb040", "#ff6a00"],
+  ["#ff8a3a", "#ff2a00"],
+  ["#ffffff", "#ff4a1a"],
+];
+function setCombo(level) {
+  M.combo = level;
+  const pw = $("power");
+  pw.innerHTML = "";
+  for (let i = 0; i < 6; i++) {
+    const pip = document.createElement("div");
+    pip.className = "pip" + (i < level ? " on" : "") + (level >= 4 && i < level ? " hot" : "") + (level >= 6 && i < level ? " white" : "");
+    pw.appendChild(pip);
+  }
+  const aura = $("ballAura");
+  if (!level) { aura.style.opacity = 0; aura.style.width = "0"; return; }
+  const [inner, outer] = AURA[Math.min(level, 5)];
+  aura.style.width = 4 + level * 2.2 + "%";
+  aura.style.opacity = Math.min(1, 0.45 + level * 0.12);
+  aura.style.background = `radial-gradient(circle, ${inner} 0%, ${outer}cc 30%, ${outer}55 55%, transparent 72%)`;
+}
+function addCombo(n, side, pos, text) {
+  if (n <= 0) return;
+  setCombo(M.combo + n);
+  if (text) pop(side, pos, text, "passive");
 }
 
 // ---------- animation helpers ----------
@@ -286,26 +337,58 @@ function anim(c, name) {
 
 function setBall(p) {
   M.ball = { ...p };
-  const b = $("ball"), s = $("ballShadow");
-  b.style.left = p.x + "%"; b.style.top = p.y + "%";
+  const b = $("ball"), s = $("ballShadow"), a = $("ballAura");
+  b.style.left = a.style.left = p.x + "%";
+  b.style.top = a.style.top = p.y + "%";
   s.style.left = p.x + "%"; s.style.top = p.gy + "%";
 }
 
-function setBallEffect(effect) {
-  $("ball").className = "ball" + (effect ? " " + effect : "");
+function setBallFx(list) {
+  M.fx = new Set(list.filter(Boolean));
+  $("ball").className = "ball " + [...M.fx].join(" ");
 }
 
-function particle(x, y, kind) {
+function particle(x, y, kind, drift = null) {
   const el = document.createElement("div");
-  el.className = "particle " + kind;
+  el.className = "particle " + kind + (drift ? " drift" : "");
   el.style.left = x + "%";
   el.style.top = y + "%";
-  $("court").appendChild(el);
-  setTimeout(() => el.remove(), 520);
+  if (drift) { el.style.setProperty("--dx", drift[0] + "px"); el.style.setProperty("--dy", drift[1] + "px"); }
+  $("fxLayer").appendChild(el);
+  setTimeout(() => el.remove(), 950);
+}
+function spray(x, y, kind, n = 12, spread = 60) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, r = spread * (0.4 + Math.random() * 0.6);
+    particle(x, y, kind, [Math.cos(a) * r, Math.sin(a) * r - 10]);
+  }
+}
+function burst(x, y, color, size = 14) {
+  const el = document.createElement("div");
+  el.className = "burst";
+  el.style.left = x + "%";
+  el.style.top = y + "%";
+  el.style.width = size + "%";
+  el.style.setProperty("--c", color);
+  $("fxLayer").appendChild(el);
+  setTimeout(() => el.remove(), 650);
+}
+function flash(color) {
+  const el = document.createElement("div");
+  el.className = "flash";
+  el.style.setProperty("--c", color);
+  $("fxLayer").appendChild(el);
+  setTimeout(() => el.remove(), 400);
+}
+function courtShake(size) {
+  const c = $("court");
+  c.classList.remove("shake-s", "shake-m", "shake-l");
+  void c.offsetWidth;
+  c.classList.add("shake-" + size);
 }
 
 // Fly the ball from where it is to `to` in an arc. arc = peak height in % of court height.
-function flyBall(to, ms, arc, effect = null) {
+function flyBall(to, ms, arc) {
   const token = matchToken;
   const from = { ...M.ball };
   return new Promise((resolve, reject) => {
@@ -318,7 +401,10 @@ function flyBall(to, ms, arc, effect = null) {
       const y = from.y + (to.y - from.y) * t - Math.sin(Math.PI * t) * arc;
       const gy = from.gy + (to.gy - from.gy) * t;
       setBall({ x, y, gy });
-      if (effect && frame++ % 2 === 0) particle(x, y, effect);
+      const kinds = [...M.fx];
+      if (M.combo >= 3) kinds.push("ember");
+      if (kinds.length && frame % 2 === 0) particle(x, y, kinds[(frame / 2) % kinds.length]);
+      frame++;
       if (t < 1) requestAnimationFrame(step);
       else { setBall(to); resolve(); }
     }
@@ -326,6 +412,22 @@ function flyBall(to, ms, arc, effect = null) {
   });
 }
 
+// Floating text above a creature. Several at once stack instead of overlapping.
+const popStack = new Map();
+function pop(side, pos, text, kind = "") {
+  const f = feet(side, pos);
+  const key = side + pos + (kind === "passive" ? "p" : "");
+  const n = popStack.get(key) || 0;
+  popStack.set(key, n + 1);
+  const el = document.createElement("div");
+  el.className = "pop " + kind;
+  el.textContent = text;
+  el.style.left = f.x + "%";
+  // passive text sits just under the name tag; everything else above the head
+  el.style.top = (kind === "passive" ? f.y + 7 + n * 3.5 : f.y - 13 - n * 5) + "%";
+  $("court").appendChild(el);
+  setTimeout(() => { el.remove(); popStack.set(key, Math.max(0, (popStack.get(key) || 1) - 1)); }, 1300);
+}
 function popAt(x, y, text, kind = "") {
   const el = document.createElement("div");
   el.className = "pop " + kind;
@@ -333,12 +435,9 @@ function popAt(x, y, text, kind = "") {
   el.style.left = x + "%";
   el.style.top = y + "%";
   $("court").appendChild(el);
-  setTimeout(() => el.remove(), 1250);
+  setTimeout(() => el.remove(), 1300);
 }
-function pop(side, pos, text, kind = "") {
-  const f = feet(side, pos);
-  popAt(f.x, f.y - 15, text, kind);
-}
+function popPassives(side, pos, list) { (list || []).forEach((t) => pop(side, pos, t, "passive")); }
 
 async function showBanner(title, sub, lose) {
   const b = $("banner");
@@ -355,7 +454,63 @@ function setHolder(side, pos) {
   if (side) elOf.get(teamOf(side).at[pos]).classList.add("holder");
 }
 
-// ---------- abilities ----------
+// ---------- ability visuals ----------
+function abilityFx(side, team, pos) {
+  const c = team.at[pos];
+  const f = feet(side, pos);
+  const h = headPt(side, pos);
+  pop(side, pos, c.active.name + "!", "ability");
+  log(`<span class="abil">${who(side, c)} used ${c.active.name}!</span>`);
+  switch (c.active.id) {
+    case "fireball": spray(h.x, h.y + 6, "fire", 16, 50); burst(h.x, h.y + 8, "#ff6a00", 10); break;
+    case "shadowStrike": spray(h.x, h.y + 6, "shadow", 16, 50); burst(h.x, h.y + 8, "#b14dff", 10); break;
+    case "tidalSet": spray(h.x, h.y + 8, "tidal", 18, 60); burst(f.x, f.y - 4, "#4fc3ff", 14); burst(f.x, f.y - 4, "#bfeaff", 8); break;
+    case "sneakySeed": spray(h.x, h.y + 6, "seed", 12, 40); break;
+    case "hornWall": burst(f.x, f.y - 10, "#ffb347", 12); addShield(side, pos); break;
+    case "deepRoots": spray(f.x, f.y - 3, "leaf", 14, 40); burst(f.x, f.y - 4, "#5fd35f", 10); break;
+    case "stampede":
+      Rules.POSITIONS.forEach((p) => {
+        const ff = feet(side, p);
+        spray(ff.x, ff.y - 1, "dust", 6, 30);
+        anim(team.at[p], "dig");
+      });
+      courtShake("s");
+      break;
+  }
+  updateStatus();
+}
+function addShield(side, pos) {
+  const el = document.createElement("div");
+  el.className = "shield";
+  el.dataset.side = side;
+  el.style.left = (side === "player" ? 46.5 : 53.5) + "%";
+  el.style.top = feet(side, pos).y - 12 + "%";
+  $("fxLayer").appendChild(el);
+}
+function clearRallyFx() {
+  document.querySelectorAll(".shield").forEach((el) => el.remove());
+}
+
+// Big, satisfying hit landing: bigger & brighter with more power
+function spikeImpact(pt, power) {
+  const color = M.fx.has("shadow") ? "#b14dff" : M.fx.has("fire") ? "#ff6a00" : M.fx.has("tidal") ? "#4fc3ff" : "#ffd65c";
+  const kinds = [...M.fx];
+  if (!kinds.length) kinds.push("ember");
+  if (power >= 105 || M.combo >= 5) {
+    courtShake("l"); flash(color);
+    burst(pt.x, pt.y + 6, color, 26); burst(pt.x, pt.y + 6, "#ffffff", 14);
+    kinds.forEach((k) => spray(pt.x, pt.y + 6, k, 14, 90));
+  } else if (power >= 88 || M.combo >= 3) {
+    courtShake("m");
+    burst(pt.x, pt.y + 6, color, 18);
+    kinds.forEach((k) => spray(pt.x, pt.y + 6, k, 10, 60));
+  } else if (power >= 70) {
+    courtShake("s");
+    burst(pt.x, pt.y + 6, color, 11);
+  }
+}
+
+// ---------- abilities (player) ----------
 const ARMABLE = ["fireball", "shadowStrike", "tidalSet", "sneakySeed"];
 
 function abilityCtx() {
@@ -364,22 +519,21 @@ function abilityCtx() {
   return { holderPos: p.holderPos, touch: p.touch, canSpike: p.canSpike, serve: p.serve };
 }
 
-function renderAbilityBar() {
-  const bar = $("abilityBar");
-  bar.innerHTML = "";
+function renderAbilityButtons() {
+  document.querySelectorAll(".abil-btn").forEach((b) => b.remove());
   const ctx = abilityCtx();
-  M.playerList.forEach((c) => {
-    const pos = posOf(M.player, c);
-    const ready = ctx && Rules.abilityReady(M.player, pos, ctx);
+  if (!ctx) return;
+  Rules.POSITIONS.forEach((pos) => {
+    const c = M.player.at[pos];
     const armed = M.armed && M.armed.c === c;
-    const state = c.cooldown > 0 ? `Recharging (${c.cooldown})`
-      : armed ? "ARMED — make your move" : ready ? "Ready! Click to use" : "Charged ✨ (not usable now)";
+    if (!armed && !Rules.abilityReady(M.player, pos, ctx)) return;
     const btn = document.createElement("button");
-    btn.className = "abtn" + (ready ? " ready" : "") + (armed ? " armed" : "") + (c.cooldown > 0 ? " cooling" : "");
-    btn.innerHTML = `<img src="${c.img}" alt=""><div><div class="aname">${c.active.name}</div><div class="astate">${state}</div></div>`;
-    btn.title = `${c.name}: ${c.active.text}`;
-    btn.addEventListener("click", () => onAbilityClick(c));
-    bar.appendChild(btn);
+    btn.className = "abil-btn" + (armed ? " armed" : "");
+    btn.textContent = armed ? `${c.active.name} ✓` : c.active.name;
+    btn.title = c.active.text;
+    btn.addEventListener("click", (e) => { e.stopPropagation(); onAbilityClick(c); });
+    btn.addEventListener("mouseenter", (e) => e.stopPropagation());
+    elOf.get(c).appendChild(btn);
   });
 }
 
@@ -393,9 +547,7 @@ function onAbilityClick(c) {
     M.armed = { c, id: c.active.id };
   } else {
     Rules.useAbility(M.player, pos);
-    pop("player", pos, c.active.name + "!", "ability");
-    log(`<span class="abil">${who("player", c)} used ${c.active.name}!</span>`);
-    updateTags();
+    abilityFx("player", M.player, pos);
   }
   refreshControls();
 }
@@ -410,61 +562,96 @@ function askPlayer(opts) {
   });
 }
 
+function askServeType() {
+  return new Promise((resolve) => {
+    const box = $("servePick");
+    box.classList.remove("hidden");
+    const done = (t) => {
+      box.classList.add("hidden");
+      $("serveFloat").onclick = $("serveHard").onclick = null;
+      resolve(t);
+    };
+    $("serveFloat").onclick = () => done("float");
+    $("serveHard").onclick = () => done("hard");
+    M.cancelServe = () => done("float");
+  });
+}
+
+function clearAuras() {
+  elOf.forEach((el) => {
+    el.classList.remove("pick-mate", "pick-opp", "suggest", "armed", "blocker-warn");
+    el.style.setProperty("--k", 0);
+  });
+}
+
 function refreshControls() {
   if (!M) return;
   const p = M.pending;
-  elOf.forEach((el) => el.classList.remove("pick-mate", "pick-opp"));
-  renderAbilityBar();
-  const freeBtn = $("freeToggle");
-  freeBtn.classList.add("hidden");
+  clearAuras();
+  renderAbilityButtons();
+  $("freeToggle").classList.add("hidden");
   if (!p) return;
+  if (M.armed) elOf.get(M.armed.c).classList.add("armed");
 
-  const oppEls = Rules.POSITIONS.map((q) => elOf.get(M.cpu.at[q]));
+  const cpuPos = Rules.POSITIONS;
+  const markOpp = (fn) => cpuPos.forEach((q) => {
+    const el = elOf.get(M.cpu.at[q]);
+    el.classList.add("pick-opp");
+    el.style.setProperty("--k", Rules.clamp(fn(q), 0, 1).toFixed(2));
+  });
+
   if (p.serve) {
-    oppEls.forEach((el) => el.classList.add("pick-opp"));
-    $("prompt").innerHTML = "<b>Your serve!</b> Click a CPU creature to serve at. Weak passers are good targets.";
+    setStep("player", 0, "serve");
+    const power = Rules.servePowerEstimate(M.player, p.serveType);
+    markOpp((q) => Rules.shankChance(M.cpu, q, power, "serve") * 2.2);
     return;
   }
   const holder = M.player.at[p.holderPos];
   const sneaky = M.armed && M.armed.id === "sneakySeed";
   const attackTouch = p.canSpike || p.touch >= 3;
-  if (sneaky || attackTouch) oppEls.forEach((el) => el.classList.add("pick-opp"));
-  if (!sneaky && !attackTouch) {
-    Rules.POSITIONS.forEach((q) => { if (q !== p.holderPos) elOf.get(M.player.at[q]).classList.add("pick-mate"); });
-  }
-  if (p.canSpike) {
-    freeBtn.classList.remove("hidden");
-    freeBtn.classList.toggle("on", M.freeOn);
-  }
 
-  const t = `<span class="muted">Touch ${p.touch}/3 ·</span> `;
-  let msg;
-  if (sneaky) msg = `<b>Sneaky Seed!</b> Click a CPU creature to attack on the 2nd touch.`;
-  else if (p.canSpike && M.freeOn) msg = `Click a CPU creature to send a soft <b>free ball</b> at.`;
-  else if (p.canSpike) msg = `<b>${holder.name} can SPIKE!</b> Click a CPU creature to aim at. Hover to see the risk.` +
-    (M.armed ? ` <b>${M.armed.c.active.name}</b> is armed!` : "");
-  else if (p.touch >= 3) msg = `${holder.name} isn't a spiker. Click a CPU creature to send a free ball over.`;
-  else if (p.touch === 1) msg = `${holder.name} passed it up! Click a teammate to <b>bump</b> to (usually your setter).`;
-  else msg = `${holder.name} is setting! Click a teammate to <b>set</b>. Spikers who get a set can spike.` +
-    (M.armed ? ` <b>${M.armed.c.active.name}</b> is armed!` : "");
-  $("prompt").innerHTML = t + msg;
+  if (sneaky) {
+    setStep("player", p.touch, "sneaky");
+    const power = 40 + holder.str * 0.35 + 5;
+    markOpp((q) => Rules.shankChance(M.cpu, q, power * (1 + CONFIG.comboPowerPerLevel * M.combo), "spike", 0.75) * 2);
+  } else if (p.canSpike && !M.freeOn) {
+    setStep("player", p.touch, "spike");
+    const special = M.armed && ["fireball", "shadowStrike"].includes(M.armed.id) ? M.armed.id : null;
+    markOpp((q) => Rules.killChance(M.player, p.holderPos, p.quality, M.cpu, q, M.combo, special).kill * 1.8);
+    $("freeToggle").classList.remove("hidden");
+    $("freeToggle").classList.toggle("on", M.freeOn);
+  } else if (attackTouch) {
+    setStep("player", p.touch, "free");
+    markOpp((q) => Rules.shankChance(M.cpu, q, 40, "free") * 3);
+    if (p.canSpike) { $("freeToggle").classList.remove("hidden"); $("freeToggle").classList.add("on"); }
+  } else {
+    setStep("player", p.touch, p.touch === 1 ? "bump" : "set");
+    Rules.POSITIONS.forEach((q) => {
+      if (q === p.holderPos) return;
+      const m = M.player.at[q];
+      const el = elOf.get(m);
+      el.classList.add("pick-mate");
+      const good = p.touch === 1 ? Rules.has(m, "setter") : Rules.has(m, "spiker") && m.winded === 0;
+      if (good) el.classList.add("suggest");
+    });
+  }
 }
 
-// Show line/cross, risk and block chance when hovering a spike target
-function showAimInfo(side, c) {
+// While aiming a spike, hovering a target shows the blockers in the ball's path
+function showBlockers(side, c) {
   const p = M && M.pending;
   if (!p || side !== "cpu" || p.serve || !p.canSpike || M.freeOn) return;
+  if (M.armed && M.armed.id === "shadowStrike") return;
   const target = posOf(M.cpu, c);
-  const a = Rules.aim("player", p.holderPos, "cpu", target);
   const hitter = M.player.at[p.holderPos];
-  const shadow = M.armed && M.armed.id === "shadowStrike";
-  const blocks = shadow ? [] : Rules.blockChances(M.player, p.holderPos, M.cpu, target, hitter.str * 0.9);
-  const block = Math.round(100 * (1 - blocks.reduce((s, b) => s * (1 - b.chance), 1)));
-  const risk = a.risk >= 0.07 ? "high" : a.risk >= 0.03 ? "medium" : "low";
-  const dig = a.aimMult <= 0.86 ? "very hard" : a.aimMult <= 0.94 ? "hard" : "normal";
-  $("aimInfo").innerHTML = `${a.line ? "Line shot" : "Cross-court"} → ${c.name} (DEF ${c.def}) · Dig difficulty: <b>${dig}</b> · ` +
-    `Out risk: <b>${risk}</b> · Block chance: <b>${shadow ? "0% (Shadow Strike)" : "~" + block + "%"}</b>`;
+  Rules.blockChances(M.player, p.holderPos, M.cpu, target, hitter.str * 0.9).forEach((b) => {
+    if (b.chance < 0.04) return;
+    const el = elOf.get(M.cpu.at[b.pos]);
+    el.classList.add("blocker-warn");
+    el.style.setProperty("--b", Math.min(1, b.chance * 3).toFixed(2));
+  });
 }
+function clearBlockers() { elOf.forEach((el) => el.classList.remove("blocker-warn")); }
 
 function onCreatureClick(side, c) {
   const p = M && M.pending;
@@ -488,14 +675,14 @@ function onCreatureClick(side, c) {
   M.pending = null;
   M.armed = null;
   M.freeOn = false;
-  $("aimInfo").textContent = "";
+  tip.classList.add("hidden");
   refreshControls();
   p.resolve(action);
 }
 
 $("freeToggle").addEventListener("click", () => { if (M && M.pending) { M.freeOn = !M.freeOn; refreshControls(); } });
 
-// ---------- spike timing bar ----------
+// ---------- timing bar (spikes and hard serves) ----------
 function runTiming(ctrl) {
   const token = matchToken;
   return new Promise((resolve) => {
@@ -508,7 +695,6 @@ function runTiming(ctrl) {
     $("timingPerfect").style.left = center - perfect / 2 + "%";
     $("timingPerfect").style.width = perfect + "%";
     box.classList.remove("hidden");
-    $("prompt").innerHTML = "<b>Time your spike!</b>";
     const start = performance.now();
     const period = 850; // ms for one sweep
     let pos = 0, done = false;
@@ -517,9 +703,8 @@ function runTiming(ctrl) {
       if (done) return;
       done = true;
       box.classList.add("hidden");
-      box.removeEventListener("pointerdown", onHit);
-      document.removeEventListener("keydown", onKey);
       $("court").removeEventListener("pointerdown", onHit);
+      document.removeEventListener("keydown", onKey);
       resolve(grade);
     }
     function onHit(e) {
@@ -539,7 +724,6 @@ function runTiming(ctrl) {
       requestAnimationFrame(step);
     }
     setTimeout(() => {
-      box.addEventListener("pointerdown", onHit);
       $("court").addEventListener("pointerdown", onHit);
       document.addEventListener("keydown", onKey);
     }, 120);
@@ -554,16 +738,17 @@ async function matchLoop(token) {
       const { winner, reason } = await playRally();
       checkAlive(token);
       setHolder(null);
-      setBallEffect(null);
-      $("prompt").innerHTML = "&nbsp;";
+      setBallFx([]);
+      setCombo(0);
+      clearAuras();
       M.score[winner]++;
       const sideOut = winner !== M.serving;
       M.serving = winner;
       Rules.endRally(M.player);
       Rules.endRally(M.cpu);
+      clearRallyFx();
       updateScore();
-      updateTags();
-      renderAbilityBar();
+      updateStatus();
       log(`<span class="point">Point ${winner === "player" ? "YOU" : "CPU"}: ${reason} (${M.score.player}–${M.score.cpu})</span>`);
       const { player: a, cpu: b } = M.score;
       const over = (a >= CONFIG.pointsToWin || b >= CONFIG.pointsToWin) && Math.abs(a - b) >= CONFIG.winBy;
@@ -577,7 +762,6 @@ async function matchLoop(token) {
       if (sideOut) {
         Rules.rotate(teamOf(winner));
         placeAll();
-        updateTags();
         await wait(800);
       }
     }
@@ -586,16 +770,7 @@ async function matchLoop(token) {
   }
 }
 
-const EFFECT = { fireball: "fire", shadowStrike: "shadow", tidalSet: "tidal" };
-
-function useAbilityFx(side, team, pos, id) {
-  const c = team.at[pos];
-  Rules.useAbility(team, pos);
-  pop(side, pos, c.active.name + "!", "ability");
-  log(`<span class="abil">${who(side, c)} used ${c.active.name}!</span>`);
-  updateTags();
-  renderAbilityBar();
-}
+const FX_OF = { fireball: "fire", shadowStrike: "shadow", tidalSet: "tidal", sneakySeed: "seed" };
 
 // Plays one rally. Returns { winner, reason }.
 async function playRally() {
@@ -603,47 +778,53 @@ async function playRally() {
   const offSide = M.serving, defSide = other(offSide);
   const off = teamOf(offSide);
   const server = off.at[1];
+  setCombo(0);
+  setBallFx([]);
 
   // CPU may switch on defensive abilities at the start of a rally
-  AI.preRally(M.cpu, defSide === "cpu", M.smart).forEach((p) => {
-    const c = M.cpu.at[p];
-    pop("cpu", p, c.active.name + "!", "ability");
-    log(`<span class="abil">${who("cpu", c)} used ${c.active.name}!</span>`);
-  });
-  updateTags();
+  AI.preRally(M.cpu, defSide === "cpu", M.smart).forEach((p) => abilityFx("cpu", M.cpu, p));
 
   // ----- server walks behind the back line -----
   const sEl = elOf.get(server);
   const lane = Rules.lane(offSide, 1);
   sEl.style.left = XS[offSide].serve + "%";
   setHolder(offSide, 1);
+  setStep(offSide, 0, "serve");
   await flyBall({ x: XS[offSide].serve, y: LANE_Y[lane] - HEAD, gy: LANE_Y[lane] }, 650, 8);
 
-  let target;
+  let target, serveType, timing = "ok";
   if (offSide === "player") {
-    target = (await askPlayer({ serve: true })).target;
+    serveType = await askServeType();
     checkAlive(token);
+    target = (await askPlayer({ serve: true, serveType })).target;
+    checkAlive(token);
+    if (serveType === "hard") { timing = await runTiming(server.ctrl); checkAlive(token); }
   } else {
-    $("prompt").innerHTML = `CPU's ${server.name} is serving…`;
-    await wait(900);
-    target = AI.easyTarget(M.player, M.smart);
+    await wait(700);
+    serveType = AI.serveType(M.smart);
+    timing = AI.timing(M.smart);
+    target = AI.easyTarget(M.player, M.smart, Rules.servePowerEstimate(off, serveType));
   }
   // toss and hit
   await flyBall({ x: XS[offSide].serve, y: LANE_Y[lane] - HEAD - 14, gy: LANE_Y[lane] }, 350, 0);
   anim(server, "jump");
+  if (serveType === "hard") pop(offSide, 1, CONFIG.timing[timing].label, timing === "perfect" ? "big" : timing === "poor" || timing === "miss" ? "bad" : "good");
+  else pop(offSide, 1, "Float serve", "passive");
   await wait(150);
-  const sv = Rules.serve(off);
+  const sv = Rules.serve(off, serveType, timing);
   setHolder(null);
   sEl.style.left = feet(offSide, 1).x + "%"; // walk back in
   if (sv.fault) {
-    await flyBall({ x: 50, y: LANE_Y[lane] - 4, gy: LANE_Y[lane] }, 500, 12);
-    popAt(50, LANE_Y[lane] - 14, "Into the net!", "bad");
-    log(`${who(offSide, server)} served into the net.`);
-    await wait(500);
-    return { winner: defSide, reason: `${offSide === "player" ? "Your" : "CPU's"} ${server.name} missed the serve` };
+    const tg = headPt(defSide, target);
+    await flyBall({ x: offSide === "player" ? 99 : 1, y: tg.y, gy: tg.gy }, 700, 25);
+    popAt(offSide === "player" ? 92 : 8, tg.y, "OUT!", "bad");
+    log(`${who(offSide, server)}'s hard serve went out.`);
+    await wait(400);
+    return { winner: defSide, reason: `${sideWord(offSide)} ${server.name}'s serve went out` };
   }
-  log(`${who(offSide, server)} serves.`);
-  await flyBall(headPt(defSide, target), 900, 30);
+  log(`${who(offSide, server)} ${serveType === "hard" ? "rips a hard serve" : "floats a serve"}.`);
+  await flyBall(headPt(defSide, target), serveType === "hard" ? 700 : 1000, serveType === "hard" ? 22 : 32);
+  if (serveType === "hard" && sv.power > 75) courtShake("s");
 
   let incoming = { fromOpp: true, side: defSide, pos: target, power: sv.power, kind: "serve", aim: 1 };
 
@@ -651,31 +832,53 @@ async function playRally() {
   while (true) {
     const side = incoming.side;
     const T = teamOf(side), O = teamOf(other(side));
-    const sideName = side === "player" ? "Your" : "CPU's";
     let holder, q, touch, isSet;
 
     if (incoming.fromOpp) {
+      setCombo(0);
+      setBallFx([]);
       const rc = T.at[incoming.pos];
       const r = Rules.receive(T, incoming.pos, incoming.power, incoming.kind, incoming.aim);
       if (r.error) {
         anim(rc, "shake");
-        await flyBall({ x: feet(side, incoming.pos).x, y: feet(side, incoming.pos).y, gy: feet(side, incoming.pos).y }, 250, 0);
+        const f = feet(side, incoming.pos);
+        await flyBall({ x: f.x + (side === "player" ? -4 : 4), y: f.y, gy: f.y }, 250, 0);
         pop(side, incoming.pos, incoming.kind === "serve" ? "ACE!" : "Shanked!", "bad");
+        burst(f.x, f.y - 2, "#ffffff", 8);
         log(`${who(side, rc)} couldn't dig it${incoming.kind === "serve" ? ". Ace!" : "."}`);
         await wait(500);
         return {
           winner: other(side),
-          reason: incoming.kind === "serve" ? `Ace! ${sideName} ${rc.name} couldn't return the serve`
-            : `${sideName} ${rc.name} couldn't dig it`,
+          reason: incoming.kind === "serve" ? `Ace! ${sideWord(side)} ${rc.name} couldn't return the serve`
+            : `${sideWord(side)} ${rc.name} couldn't dig it`,
         };
       }
-      anim(rc, "dig");
-      if (r.special) pop(side, incoming.pos, r.special, "ability");
-      else {
-        const [w, k] = r.quality >= 80 ? ["Perfect pass!", "good"] : r.quality >= 55 ? ["Nice dig!", "good"] : r.quality >= 30 ? ["Okay", ""] : ["Shaky…", "bad"];
-        pop(side, incoming.pos, w, k);
+      if (r.savedBy) {
+        // Nine Lives: Felimelon dives in and takes the ball
+        anim(rc, "shake");
+        pop(side, r.savedBy, "Nine Lives!", "ability");
+        const fp = headPt(side, r.savedBy);
+        spray(fp.x, fp.y + 10, "seed", 12, 50);
+        await flyBall(fp, 350, 8);
+        anim(T.at[r.savedBy], "dig");
+        holder = r.savedBy;
+      } else {
+        anim(rc, "dig");
+        holder = incoming.pos;
+        if (r.ability) {
+          pop(side, holder, r.ability, "ability");
+          const f = feet(side, holder);
+          spray(f.x, f.y - 6, "leaf", 14, 50);
+          burst(f.x, f.y - 6, "#5fd35f", 12);
+        } else {
+          const [w, k] = r.quality >= 80 ? ["Perfect pass!", "good"] : r.quality >= 55 ? ["Nice dig!", "good"] : r.quality >= 30 ? ["Okay", ""] : ["Shaky…", "bad"];
+          pop(side, holder, w, k);
+        }
+        popPassives(side, holder, r.passives);
       }
-      holder = incoming.pos; q = r.quality; touch = 1; isSet = false;
+      q = r.quality; touch = 1; isSet = false;
+      addCombo(Rules.comboGain("pass", q), side, holder);
+      updateStatus();
     } else {
       holder = incoming.pos; q = incoming.quality; touch = incoming.touch; isSet = incoming.isSet;
     }
@@ -686,15 +889,20 @@ async function playRally() {
 
     let action;
     if (side === "player") {
-      action = await askPlayer({ holderPos: holder, touch, canSpike });
+      action = await askPlayer({ holderPos: holder, touch, canSpike, quality: q });
       checkAlive(token);
     } else {
-      $("prompt").innerHTML = `CPU's ${hc.name} has the ball…`;
+      setStep("cpu", touch, canSpike ? "spike" : touch === 3 ? "free" : touch === 1 ? "bump" : "set");
       await wait(600);
-      action = AI.decide(T, O, holder, touch, isSet, M.smart);
+      action = AI.decide(T, O, holder, touch, isSet, q, M.combo, M.smart);
+      if (action.type === "sneaky") setStep("cpu", touch, "sneaky");
     }
-    if (action.special) useAbilityFx(side, T, holder, action.special);
-    setBallEffect(EFFECT[action.special] || null);
+    if (action.special) {
+      Rules.useAbility(T, holder);
+      abilityFx(side, T, holder);
+      setBallFx([...M.fx, FX_OF[action.special]]);
+      if (action.special !== "sneakySeed") addCombo(1, side, holder);
+    }
 
     // ----- bump / set to a teammate -----
     if (action.type === "bump" || action.type === "set") {
@@ -709,12 +917,12 @@ async function playRally() {
         pop(side, holder, asSet ? "Bad set!" : "Mishit!", "bad");
         log(`${who(side, hc)} ${asSet ? "botched the set" : "mishit the pass"}.`);
         await wait(500);
-        return { winner: other(side), reason: `${sideName} ${hc.name} ${asSet ? "botched the set" : "mishit the pass"}` };
+        return { winner: other(side), reason: `${sideWord(side)} ${hc.name} ${asSet ? "botched the set" : "mishit the pass"}` };
       }
-      if (p.special) pop(side, holder, p.special, "ability");
+      popPassives(side, holder, p.passives);
+      addCombo(Rules.comboGain(asSet ? "set" : "pass", p.quality), side, holder, p.quality >= 80 && !action.special ? (asSet ? "Perfect set!" : "Perfect pass!") : null);
       log(`${who(side, hc)} ${asSet ? "sets" : "bumps"} to ${mate.name}.`);
-      await flyBall(headPt(side, action.target), asSet ? 650 : 600, asSet ? 24 : 18, EFFECT[action.special]);
-      setBallEffect(asSet && T.buffs.tidal ? "tidal" : null);
+      await flyBall(headPt(side, action.target), asSet ? 650 : 600, asSet ? 24 : 18);
       incoming = { fromOpp: false, side, pos: action.target, quality: p.quality, touch: touch + 1, isSet: asSet };
       continue;
     }
@@ -723,40 +931,44 @@ async function playRally() {
     if (action.type === "spike") {
       const timing = side === "player" ? await runTiming(hc.ctrl) : action.timing;
       checkAlive(token);
-      if (T.buffs.tidal) setBallEffect("tidal");
-      if (action.special === "fireball") setBallEffect("fire");
-      if (action.special === "shadowStrike") setBallEffect("shadow");
-      const fx = action.special === "fireball" ? "fire" : action.special === "shadowStrike" ? "shadow" : null;
+      const t = CONFIG.timing[timing];
       anim(hc, "jump");
-      pop(side, holder, CONFIG.timing[timing].label, timing === "perfect" ? "big" : timing === "poor" || timing === "miss" ? "bad" : "good");
+      pop(side, holder, t.label, timing === "perfect" ? "big" : timing === "poor" || timing === "miss" ? "bad" : "good");
+      const comboAtHit = M.combo;
+      addCombo(t.combo, side, holder);
       await wait(180);
       setHolder(null);
-      const res = Rules.spike(T, holder, q, O, action.target, timing, action.special);
-      updateTags();
+      const res = Rules.spike(T, holder, q, O, action.target, timing, action.special, comboAtHit);
+      popPassives(side, holder, res.passives);
+      updateStatus();
       const tgt = headPt(other(side), action.target);
       if (res.out) {
-        const outX = side === "player" ? 99 : 1;
-        await flyBall({ x: outX, y: tgt.y + 4, gy: tgt.gy + 4 }, 450, 6, fx);
+        await flyBall({ x: side === "player" ? 99 : 1, y: tgt.y + 4, gy: tgt.gy + 4 }, 450, 6);
         popAt(side === "player" ? 92 : 8, tgt.y, "OUT!", "bad");
         log(`${who(side, hc)} spikes… out!`);
         await wait(400);
-        return { winner: other(side), reason: `${sideName} ${hc.name}'s spike went out` };
+        return { winner: other(side), reason: `${sideWord(side)} ${hc.name}'s spike went out` };
       }
       if (res.blocked) {
         const blocker = O.at[res.blockerPos];
         const bp = headPt(other(side), res.blockerPos);
         anim(blocker, "jump");
-        await flyBall({ x: side === "player" ? 48 : 52, y: bp.y - 4, gy: bp.gy }, 260, 2, fx);
+        await flyBall({ x: side === "player" ? 48 : 52, y: bp.y - 4, gy: bp.gy }, 260, 2);
         pop(other(side), res.blockerPos, "BLOCKED!", "big");
+        popPassives(other(side), res.blockerPos, res.blockerPassives);
+        burst(side === "player" ? 49 : 51, bp.y, "#7ad8ff", 12);
+        courtShake("s");
+        setBallFx([]);
+        setCombo(0);
         const fall = feet(side, holder);
         await flyBall({ x: side === "player" ? 44 : 56, y: fall.y, gy: fall.y }, 380, 8);
         log(`${who(side, hc)} spikes. Stuffed by ${who(other(side), blocker)}!`);
         await wait(400);
-        return { winner: other(side), reason: `${other(side) === "player" ? "Your" : "CPU's"} ${blocker.name} blocked it` };
+        return { winner: other(side), reason: `${sideWord(other(side))} ${blocker.name} blocked it` };
       }
-      log(`${who(side, hc)} spikes hard!`);
-      await flyBall(tgt, 380, 4, fx);
-      setBallEffect(null);
+      log(`${who(side, hc)} spikes${M.combo >= 4 ? " with huge power" : ""}!`);
+      await flyBall(tgt, Math.max(220, 400 - M.combo * 30), 4);
+      spikeImpact(tgt, res.power);
       incoming = { fromOpp: true, side: other(side), pos: action.target, power: res.power, kind: "spike", aim: res.aimMult };
       continue;
     }
@@ -765,15 +977,16 @@ async function playRally() {
     if (action.type === "sneaky") {
       anim(hc, "jump");
       setHolder(null);
-      const res = Rules.sneaky(T, holder);
+      const res = Rules.sneaky(T, holder, M.combo);
       const tgt = headPt(other(side), action.target);
       if (res.out) {
         await flyBall({ x: side === "player" ? 99 : 1, y: tgt.y, gy: tgt.gy }, 500, 10);
         log(`${who(side, hc)}'s sneaky attack went out!`);
-        return { winner: other(side), reason: `${sideName} ${hc.name}'s sneaky attack went out` };
+        return { winner: other(side), reason: `${sideWord(side)} ${hc.name}'s sneaky attack went out` };
       }
       log(`${who(side, hc)} attacks on the 2nd touch!`);
       await flyBall(tgt, 450, 10);
+      spray(tgt.x, tgt.y + 6, "seed", 10, 40);
       incoming = { fromOpp: true, side: other(side), pos: action.target, power: res.power, kind: "spike", aim: res.aimMult };
       continue;
     }
@@ -786,7 +999,7 @@ async function playRally() {
     if (res.out) {
       await flyBall({ x: side === "player" ? 99 : 1, y: tgt.y, gy: tgt.gy }, 700, 25);
       log(`${who(side, hc)} sends it over… out!`);
-      return { winner: other(side), reason: `${sideName} ${hc.name}'s free ball went out` };
+      return { winner: other(side), reason: `${sideWord(side)} ${hc.name}'s free ball went out` };
     }
     log(`${who(side, hc)} sends a free ball over.`);
     await flyBall(tgt, 850, 30);
@@ -797,11 +1010,9 @@ async function playRally() {
 function backToBuilder() {
   matchToken++;
   if (M && M.pending) { const p = M.pending; M.pending = null; p.resolve({ type: "abort" }); }
+  if (M && M.cancelServe) M.cancelServe();
   M = null;
-  $("timing").classList.add("hidden");
-  $("banner").classList.add("hidden");
-  $("endOverlay").classList.add("hidden");
-  $("match").classList.add("hidden");
+  ["timing", "banner", "servePick", "endOverlay", "match"].forEach((id) => $(id).classList.add("hidden"));
   $("builder").classList.remove("hidden");
   tip.classList.add("hidden");
   renderBuilder();
