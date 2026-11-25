@@ -17,18 +17,19 @@
 
     <div class="builder-layout">
       <div class="panel">
-        <h2>Pick your team <span class="muted">(3–6)</span></h2>
-        <p class="muted small">Click a creature, then click a spot on your court. Click a placed creature to remove it.
-          Press <b>★</b> to choose your server.</p>
+        <h2>Pick your team <span class="muted">(6)</span></h2>
+        <p class="muted small">Click a creature, then click a spot on your court. Click a placed creature to take it off.
+          Hover a creature to see its abilities.</p>
         <div id="roster" class="roster"></div>
       </div>
 
       <div class="panel">
-        <h2>Your court</h2>
+        <h2>Starting positions</h2>
+        <p class="muted small">Your team rotates clockwise each time you win the serve back.
+          Whoever is in spot <b>1</b> serves. Only the front row can block, and back-row spikes are weaker.</p>
         <div class="court-preview">
-          <div class="row-labels"><span>Back row</span><span>Front row</span></div>
-          <div id="builderGrid" class="grid grid-left"></div>
-          <div class="net-mini"></div>
+          <div class="row-labels"><span>Back row</span><span>Front row</span><span class="net-label">Net ▸</span></div>
+          <div id="builderGrid" class="bgrid"></div>
         </div>
         <div class="builder-controls">
           <label>CPU difficulty
@@ -41,7 +42,7 @@
           <button id="randomTeam" class="btn secondary">Random team</button>
           <button id="startMatch" class="btn primary" disabled>Start match</button>
         </div>
-        <p id="builderMsg" class="muted small"></p>
+        <p id="builderMsg" class="muted small center"></p>
       </div>
     </div>
   </section>
@@ -49,24 +50,50 @@
   <!-- ================= MATCH ================= -->
   <section id="match" class="screen hidden">
     <div class="scoreboard">
-      <div class="team-score"><span class="label">You</span><span id="scorePlayer">0</span><span id="servePlayer" class="serve-dot">●</span></div>
+      <div class="team-score"><span class="label">You</span><span id="scorePlayer">0</span><span id="servePlayer" class="serve-dot">🏐</span></div>
       <div class="vs muted small">First to <span id="target">15</span></div>
-      <div class="team-score"><span id="serveCpu" class="serve-dot">●</span><span id="scoreCpu">0</span><span class="label">CPU</span></div>
+      <div class="team-score"><span id="serveCpu" class="serve-dot">🏐</span><span id="scoreCpu">0</span><span class="label">CPU</span></div>
     </div>
 
     <div id="court" class="court">
-      <div id="playerGrid" class="grid grid-left"></div>
-      <div class="net"></div>
-      <div id="cpuGrid" class="grid grid-right"></div>
-      <img id="ball" class="ball" src="assets/volleyball.png" alt="ball">
+      <div class="floor">
+        <svg class="lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <rect x="0" y="0" width="100" height="100" class="boundary"/>
+          <line x1="25" y1="0" x2="25" y2="100" class="zone"/>
+          <line x1="75" y1="0" x2="75" y2="100" class="zone"/>
+          <line x1="0" y1="33.3" x2="100" y2="33.3" class="zone"/>
+          <line x1="0" y1="66.6" x2="100" y2="66.6" class="zone"/>
+        </svg>
+      </div>
+      <div class="net"><div class="post top"></div><div class="post bottom"></div></div>
+      <div id="creatures"></div>
+      <div id="ballShadow" class="ball-shadow"></div>
+      <div id="ball" class="ball"><img src="assets/volleyball.png" alt="ball"></div>
+      <div id="banner" class="banner hidden"><div id="bannerTitle"></div><div id="bannerSub"></div></div>
     </div>
 
     <div class="action-bar">
-      <div id="prompt" class="prompt">Get ready…</div>
-      <div class="action-buttons">
-        <button id="setToggle" class="btn toggle" disabled>Set: OFF</button>
-        <button id="freeToggle" class="btn toggle" disabled>Send it over</button>
+      <div class="prompt-wrap">
+        <div id="prompt" class="prompt">Get ready…</div>
+        <div id="aimInfo" class="aim-info"></div>
       </div>
+      <div class="action-buttons">
+        <button id="freeToggle" class="btn toggle hidden">Free ball instead</button>
+      </div>
+    </div>
+
+    <div id="timing" class="timing hidden">
+      <div class="timing-label">Click, tap, or press <b>Space</b> when the marker hits the gold!</div>
+      <div id="timingTrack" class="timing-track">
+        <div id="timingGood" class="timing-good"></div>
+        <div id="timingPerfect" class="timing-perfect"></div>
+        <div id="timingMarker" class="timing-marker"></div>
+      </div>
+    </div>
+
+    <div class="abilities-wrap">
+      <div class="small muted">Your abilities (they recharge after a couple rallies)</div>
+      <div id="abilityBar" class="ability-bar"></div>
     </div>
 
     <div id="log" class="log"></div>
