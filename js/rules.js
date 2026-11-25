@@ -112,10 +112,18 @@ Rules.abilityReady = (team, pos, ctx) => {
     case "hornWall":     return Rules.isFront(pos) && !team.buffs.hornWall;
     case "deepRoots":    return !team.buffs.deepRoots;
     case "stampede":     return !team.buffs.stampede;
+    case "cactusCover":  return !team.buffs.cactusCover;
   }
   return false;
 };
-Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede"];
+Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede", "cactusCover"];
+
+// Cactus Cover: a spike aimed at a teammate next to Desacti gets dug by Desacti instead
+Rules.coverPos = (team, pos, kind) => {
+  if (kind !== "spike" || !team.buffs.cactusCover) return pos;
+  const d = Rules.POSITIONS.find((p) => team.at[p].active.id === "cactusCover");
+  return d && d !== pos && Rules.dist(team.side, d, pos) === 1 ? d : pos;
+};
 Rules.useAbility = (team, pos) => {
   const c = team.at[pos];
   c.cooldown = ABILITY_COOLDOWN;
@@ -187,6 +195,7 @@ Rules.receive = (team, pos, power, kind, aimMult = 1) => {
 
 // Chance that a ball of this power, aimed at pos, gets shanked (used for the red target glow)
 Rules.shankChance = (team, pos, power, kind, aimMult = 1) => {
+  pos = Rules.coverPos(team, pos, kind);
   const c = team.at[pos];
   if (kind === "spike" && c.active.id === "deepRoots" && team.buffs.deepRoots) return 0;
   const r = receiveSkill(team, pos, kind);
@@ -408,6 +417,7 @@ AI.preRally = (team, receivingServe, smart) => {
     if (id === "hornWall" && Math.random() < smart * 0.7) used.push(p);
     if (id === "stampede" && receivingServe && Math.random() < smart * 0.6) used.push(p);
     if (id === "deepRoots" && Math.random() < smart * 0.5) used.push(p);
+    if (id === "cactusCover" && !receivingServe && Math.random() < smart * 0.6) used.push(p);
   });
   used.forEach((p) => Rules.useAbility(team, p));
   return used;

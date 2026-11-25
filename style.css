@@ -172,7 +172,7 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .crt .jumper { transform-origin: 50% 100%; }
 .crt .bob { transform-origin: 50% 100%; animation: sway 2.4s ease-in-out infinite; transition: filter 0.2s; }
 .crt img { display: block; width: 100%; aspect-ratio: 1 / 0.9; object-fit: contain; object-position: 50% 100%; transition: filter 0.3s; }
-.crt.cpu img { transform: scaleX(-1); }
+.crt.flip img { transform: scaleX(-1); }
 /* standing still at the feet, swaying a little up top */
 @keyframes sway {
   0%, 100% { transform: skewX(0deg) scale(1, 1); }
@@ -231,92 +231,39 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .abil-btn.armed { background: linear-gradient(#ffe066, #ffb020); color: #2a1600; border-color: #fff; box-shadow: 0 0 16px #ffcc33; animation: none; }
 @keyframes abilPulse { 50% { box-shadow: 0 0 20px #d7a8ff; transform: translateX(-50%) translateY(-3px); } }
 
-/* ---------- ball, power aura, particles ---------- */
-.ball { position: absolute; width: 4%; transform: translate(-50%, -50%); z-index: 8; pointer-events: none; }
-.ball img { width: 100%; display: block; animation: spin 1.2s linear infinite; }
-.ball.fire img { filter: drop-shadow(0 0 6px #ff7a1a) drop-shadow(0 0 12px #ff3d00) sepia(0.6) saturate(3) hue-rotate(-20deg); }
-.ball.shadow img { filter: drop-shadow(0 0 6px #b14dff) drop-shadow(0 0 12px #5a00a8) brightness(0.6) saturate(2); }
-.ball.tidal img { filter: drop-shadow(0 0 6px #4fc3ff) drop-shadow(0 0 12px #1a7aff); }
-.ball.shadow.tidal img { filter: drop-shadow(0 0 6px #b14dff) drop-shadow(0 0 14px #2f9bff) brightness(0.65) saturate(2); }
-.ball.toxic img { filter: drop-shadow(0 0 6px #7dff5a) drop-shadow(0 0 12px #9b30ff) hue-rotate(60deg) saturate(1.5); }
-.ball.lantern img { filter: drop-shadow(0 0 6px #ff8c1a) drop-shadow(0 0 12px #8dff6a) sepia(0.5) saturate(2.5) hue-rotate(-15deg); }
-.ball.seed img { filter: drop-shadow(0 0 6px #7be07b) drop-shadow(0 0 10px #ff6a8a); }
-.ball { z-index: 9; }
-/* ability aura swirling around the ball */
-.ball-fx {
-  position: absolute; width: 10%; aspect-ratio: 1; border-radius: 50%; margin: -5% 0 0 -5%;
-  z-index: 7; pointer-events: none; opacity: 0; transition: opacity 0.25s;
-  filter: blur(3px); animation: spin 0.9s linear infinite;
-  -webkit-mask: radial-gradient(circle, #000 0 28%, #0008 45%, transparent 68%);
-          mask: radial-gradient(circle, #000 0 28%, #0008 45%, transparent 68%);
-}
-.ball-fx.on { opacity: 0.95; }
-/* momentum flames around the ball */
+/* ---------- ball, pixel flame ring, particles ---------- */
+.ball { position: absolute; width: 4%; transform: translate(-50%, -50%); z-index: 9; pointer-events: none; }
+.ball img { width: 100%; display: block; animation: spin 2.6s linear infinite; }
+.ball-fx { display: none; }
 .ball-flames {
-  position: absolute; aspect-ratio: 1; z-index: 8; pointer-events: none;
-  width: 0; opacity: 0; transition: width 0.3s, margin 0.3s, opacity 0.3s; animation: spin 2.4s linear infinite;
-  --fa: #fff3a0; --fb: #ff9a1a;
+  position: absolute; z-index: 8; pointer-events: none; opacity: 0; transition: opacity 0.2s;
+  background-repeat: no-repeat; image-rendering: pixelated;
 }
 .ball-flames.on { opacity: 1; }
-.ball-flames::before {
-  content: ""; position: absolute; inset: 18%; border-radius: 50%;
-  background: radial-gradient(circle, var(--fa) 0%, var(--fb) 45%, transparent 72%); opacity: 0.75; filter: blur(2px);
-}
-.flame { position: absolute; left: 50%; bottom: 50%; width: 26%; height: 50%; margin-left: -13%; transform-origin: 50% 100%; }
-.flame i {
-  position: absolute; inset: 0; border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%;
-  background: radial-gradient(ellipse at 50% 85%, var(--fa) 0%, var(--fb) 45%, transparent 72%);
-  transform-origin: 50% 100%; animation: flick 0.22s ease-in-out infinite alternate;
-}
-@keyframes flick { from { transform: scale(0.85, 0.75); opacity: 0.8; } to { transform: scale(1.05, 1.15); opacity: 1; } }
+.fx-sprite { position: absolute; background-repeat: no-repeat; image-rendering: pixelated; pointer-events: none; z-index: 7; }
 .ball-shadow {
   position: absolute; width: 3%; height: 1.8%; border-radius: 50%; background: #0007;
   transform: translate(-50%, -50%); z-index: 3; pointer-events: none;
 }
 #fxLayer { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
+/* crisp square pixel bits (sparks, embers, drops, leaves...) */
 .particle {
-  position: absolute; width: 1.4%; aspect-ratio: 1; border-radius: 50%; pointer-events: none;
-  transform: translate(-50%, -50%); animation: particle 0.55s ease-out forwards;
+  position: absolute; width: calc(var(--px, 2px) * 2); height: calc(var(--px, 2px) * 2); pointer-events: none;
+  transform: translate(-50%, -50%); background: var(--pc, #ffc83a); animation: particle 0.55s steps(6) forwards;
 }
-.particle.fire { background: radial-gradient(ellipse at 50% 75%, #fff2a8, #ff8a00 45%, #ff2a0088 65%, transparent 72%);
-  border-radius: 50% 50% 45% 45% / 70% 70% 30% 30%; aspect-ratio: 0.7; }
-.particle.ember { width: 0.6%; background: radial-gradient(#ffffff, #ffb020 50%, transparent 70%); }
-.particle.shadow { background: radial-gradient(#e0b3ff, #6a00c8 60%, transparent 70%); }
-.particle.tidal { background: radial-gradient(#e0f6ff, #2f9bff 60%, transparent 70%); }
-.particle.seed { background: radial-gradient(#d6ffb3, #3aa83a 60%, transparent 70%); }
-.particle.leaf { background: radial-gradient(#b6ff9c, #2e9e3a 60%, transparent 70%); border-radius: 50% 0; }
-.particle.dust { background: radial-gradient(#e8c9a0, #a0703a 60%, transparent 70%); width: 2.2%; }
-.particle.big { width: 2.6%; }
-.particle.smoke { width: 4.5%; background: radial-gradient(#8a3ac8aa, #2a0040aa 55%, transparent 70%); filter: blur(2px); }
-.particle.drop { width: 1.1%; background: radial-gradient(#ffffff, #4fc3ff 55%, transparent 70%); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; }
-.particle.spark { width: 1%; background: radial-gradient(#ffffff, #ffd65c 55%, transparent 70%); }
-.particle.toxic { background: radial-gradient(#eaffc4, #7dff5a 40%, #9b30ff 62%, transparent 72%); }
-.particle.bubble { width: 1.7%; background: radial-gradient(circle at 35% 35%, #ffffffcc 0 12%, #7dff5a33 30%, #9b30ff22 70%); border: 2px solid #b6ff7a; }
-.particle.lantern { background: radial-gradient(#fff0b3, #ff8c1a 55%, transparent 70%); }
-.particle.ghost { width: 3.2%; background: radial-gradient(#f2fff2, #8dff6a88 50%, transparent 70%); filter: blur(1px); }
-.particle.drift { animation: drift 0.9s ease-out forwards; }
-@keyframes particle { to { opacity: 0; transform: translate(-50%, -50%) scale(0.2); } }
-@keyframes drift { to { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.3); } }
-/* shockwave flat on the floor */
-.ripple {
-  position: absolute; aspect-ratio: 3 / 1; border-radius: 50%; transform: translate(-50%, -50%) scale(0.2);
-  border: 3px solid var(--c); box-shadow: 0 0 14px var(--c); animation: ripple 0.6s ease-out forwards; pointer-events: none;
-}
-@keyframes ripple { 50% { opacity: 1; } to { transform: translate(-50%, -50%) scale(1); opacity: 0; } }
-/* light streaks shooting outward */
-.streak {
-  position: absolute; height: 4px; width: var(--len); transform-origin: 0 50%; border-radius: 2px;
-  background: linear-gradient(90deg, var(--c), transparent); pointer-events: none;
-  transform: rotate(var(--a)) translateX(0) scaleX(0.2); animation: streak 0.45s ease-out forwards;
-}
-@keyframes streak { 30% { opacity: 1; } to { transform: rotate(var(--a)) translateX(60%) scaleX(1); opacity: 0; } }
+.particle.big { width: calc(var(--px, 2px) * 3); height: calc(var(--px, 2px) * 3); }
+.particle.fire { --pc: #ff8a00; } .particle.ember { --pc: #ffc83a; }
+.particle.shadow { --pc: #8b3fe0; } .particle.smoke { --pc: #6a5a6a; }
+.particle.tidal, .particle.drop { --pc: #8fd8ff; }
+.particle.seed { --pc: #5fd35f; } .particle.leaf { --pc: #2e9e3a; }
+.particle.dust { --pc: #b08a5a; } .particle.spark { --pc: #ffe88a; }
+.particle.toxic { --pc: #9dff5a; } .particle.bubble { --pc: #c6ff9a; }
+.particle.lantern { --pc: #ff8c1a; } .particle.ghost { --pc: #c58bff; }
+.particle.drift { animation: drift 0.8s steps(8) forwards; }
+@keyframes particle { to { opacity: 0; transform: translate(-50%, -50%) scale(0.5); } }
+@keyframes drift { to { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); } }
 .flash { position: absolute; inset: 0; background: var(--c); opacity: 0; animation: flash 0.35s ease-out; pointer-events: none; }
 @keyframes flash { 20% { opacity: 0.35; } to { opacity: 0; } }
-.shield {
-  position: absolute; width: 2.4%; height: 20%; transform: translate(-50%, -50%); border-radius: 40%;
-  background: linear-gradient(90deg, #ffb34733, #ffcf7a88, #ffb34733); border: 2px solid #ffcf7a;
-  box-shadow: 0 0 14px #ff9a1a; animation: pulse 1s infinite; pointer-events: none; z-index: 6;
-}
 @keyframes pulse { 50% { opacity: 0.55; } }
 
 /* ---------- pops & banner ---------- */

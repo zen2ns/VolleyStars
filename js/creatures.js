@@ -14,6 +14,8 @@
 //  The ability "id"s connect to code in js/rules.js, so change the names and
 //  descriptions freely, but keep the ids the same unless you ask for new abilities.
 //  "looks" is a list of pictures you can choose between on the team screen.
+//  "faces": which way the drawing looks ("left" if left out). The game flips sprites so
+//  every creature faces the net.
 // =====================================================================
 
 const ABILITY_COOLDOWN = 3; // rallies to wait after using an active ability
@@ -41,7 +43,7 @@ const CREATURES = [
     active: { id: "hornWall", name: "Horn Wall", text: "For this rally, its block chance is huge (front row only)." },
   },
   {
-    id: "ripplet", name: "Ripplet", looks: ["assets/creatures/ripplet.png"],
+    id: "ripplet", name: "Ripplet", looks: ["assets/creatures/ripplet.png"], faces: "right",
     classes: ["setter", "receiver"],
     str: 50, ctrl: 85, def: 60, per: 65,
     passive: { id: "flowingSets", name: "Flowing Sets", text: "Sets better from the back row instead of worse." },
@@ -81,5 +83,12 @@ const CREATURES = [
     str: 58, ctrl: 82, def: 55, per: 66,
     passive: { id: "longBody", name: "Long Body", text: "No penalty for passing or setting far away." },
     active: { id: "lanternSet", name: "Jack-o'-Lantern Set", text: "A spooky set: the other team's blockers are too scared to block the next spike, and momentum swings hard your way." },
+  },
+  {
+    id: "desacti", name: "Desacti", looks: ["assets/creatures/desacti.png"],
+    classes: ["receiver"],
+    str: 50, ctrl: 72, def: 86, per: 80,
+    passive: { id: "desertCalm", name: "Desert Calm", text: "Desacti's big digs swing momentum 1 extra." },
+    active: { id: "cactusCover", name: "Cactus Cover", text: "For this rally, spikes aimed at a teammate next to Desacti get intercepted and dug by Desacti instead." },
   },
 ];

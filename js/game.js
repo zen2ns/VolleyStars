@@ -263,7 +263,9 @@ function buildCourt() {
     Rules.POSITIONS.forEach((p) => {
       const c = teamOf(side).at[p];
       const el = document.createElement("div");
-      el.className = `crt ${side}`;
+      // face the net: player team looks right, CPU team looks left
+      const facesLeft = (c.faces || "left") === "left";
+      el.className = `crt ${side}` + ((side === "player") === facesLeft ? " flip" : "");
       el.innerHTML = `<div class="shadow"></div><div class="jumper"><div class="bob"><img src="${spriteSrc(c.img)}" alt="${c.name}"></div></div><div class="tag">${c.name}</div>`;
       const bob = el.querySelector(".bob");
       bob.style.animationDuration = (2 + Math.random() * 1.2).toFixed(2) + "s";
@@ -279,6 +281,7 @@ function buildCourt() {
   placeAll();
   updateStatus();
   setBall(headPt(M.serving, 1));
+  $("court").style.setProperty("--px", fxScale() + "px");
 }
 
 function placeAll() {
@@ -306,6 +309,7 @@ function updateStatus() {
       el.classList.toggle("roots", c.active.id === "deepRoots" && !!T.buffs.deepRoots);
       el.classList.toggle("stampede", !!T.buffs.stampede);
       el.classList.toggle("poisoned", c.poison > 0);
+      el.classList.toggle("roots", (c.active.id === "deepRoots" && !!T.buffs.deepRoots) || (c.active.id === "cactusCover" && !!T.buffs.cactusCover));
     });
   });
 }
@@ -330,6 +334,65 @@ function setStep(side, touch, word) {
   $("step").classList.toggle("cpu-turn", side === "cpu");
 }
 
+// ---------- pixel effect sprites (assets/fx, made by tools/make_fx.py) ----------
+// Every sheet is a row of frames. Effects are drawn on the same 2-pixel grid as the
+// creature art; fxScale() turns one effect pixel into whole screen pixels so they stay crisp.
+function sheetInfo(name) {
+  if (name.startsWith("ring_")) { const t = +name.slice(-1); const w = [0, 48, 60, 72][t]; return { w, h: w, frames: 8 }; }
+  if (name.startsWith("boom_")) return { w: 64, h: 64, frames: 10 };
+  if (name.startsWith("puff_")) return { w: 32, h: 32, frames: 10 };
+  if (name.startsWith("wave_")) return { w: 64, h: 24, frames: 6 };
+  if (name.startsWith("flame_")) return { w: 14, h: 20, frames: 6 };
+  if (name === "shield") return { w: 14, h: 44, frames: 4 };
+  if (name === "sparkle") return { w: 24, h: 24, frames: 6 };
+  return { w: 32, h: 32, frames: 1 };
+}
+const FX_NAMES = [
+  ...["fire", "hot", "shadow", "tidal", "toxic", "seed", "lantern"].flatMap((k) => [1, 2, 3].map((t) => `ring_${k}_${t}`)),
+  ...["fire", "shadow", "toxic", "seed", "lantern", "tidal"].map((k) => "boom_" + k),
+  ...["fire", "shadow", "toxic", "seed", "lantern", "ghost", "dust", "gold", "tidal"].map((k) => "puff_" + k),
+  ...["white", "gold", "orange", "purple", "blue", "green", "toxic"].map((k) => "wave_" + k),
+  ...["fire", "shadow", "tidal", "toxic", "seed", "lantern", "gold"].map((k) => "flame_" + k),
+  "shield", "sparkle",
+];
+FX_NAMES.forEach((n) => { const i = new Image(); i.src = `assets/fx/${n}.png`; }); // preload
+
+function fxScale() {
+  const w = $("court").getBoundingClientRect().width || 1000;
+  return Math.max(1, Math.round(w / 650));
+}
+// Play a sprite sheet at (x%, y%) of the court. anchor "center" or "bottom" (bottom sits on the point).
+function playSprite(name, x, y, { scale = fxScale(), frameMs = 70, loop = false, anchor = "center", layer = "fxLayer" } = {}) {
+  const info = sheetInfo(name);
+  const el = document.createElement("div");
+  el.className = "fx-sprite";
+  const w = info.w * scale, h = info.h * scale;
+  el.style.width = w + "px";
+  el.style.height = h + "px";
+  el.style.left = x + "%";
+  el.style.top = y + "%";
+  el.style.marginLeft = -w / 2 + "px";
+  el.style.marginTop = (anchor === "bottom" ? -h : -h / 2) + "px";
+  el.style.backgroundImage = `url(assets/fx/${name}.png)`;
+  el.style.backgroundSize = `${info.frames * w}px ${h}px`;
+  $(layer).appendChild(el);
+  let f = 0;
+  const token = M ? matchToken : -1;
+  const tick = () => {
+    if (!el.isConnected) return;
+    if (M && token !== matchToken) { el.remove(); return; }
+    el.style.backgroundPosition = `${-f * w}px 0`;
+    f++;
+    if (f >= info.frames) {
+      if (!loop) { setTimeout(() => el.remove(), frameMs); return; }
+      f = 0;
+    }
+    el._timer = setTimeout(tick, frameMs);
+  };
+  tick();
+  return el;
+}
+
 // ---------- momentum (shared tug-of-war) + flames around the ball ----------
 // M.mom goes from -6 (all CPU) to +6 (all you). Resets every rally.
 const levelFor = (side) => Math.max(0, side === "player" ? M.mom : -M.mom);
@@ -351,56 +414,38 @@ function swing(side, n, pos, text) {
 }
 function setPossession(side) { M.poss = side; updateFlames(); }
 
-const FLAME_COLORS = {
-  none: ["#fff3a0", "#ff9a1a"], fire: ["#ffe066", "#ff2a00"], shadow: ["#e9c8ff", "#7a14d8"],
-  tidal: ["#e8f8ff", "#1a8cff"], seed: ["#e2ffc4", "#2e9e3a"],
-  toxic: ["#eaffc4", "#8a2be2"], lantern: ["#fff0b3", "#ff7a00"],
-};
-const FX_RING = {
-  fire: ["#ff2a00", "#ffb020"], shadow: ["#1a0030", "#b14dff"], tidal: ["#0a5cff", "#9be3ff"], seed: ["#1f7a2a", "#ff6a8a"],
-  toxic: ["#7dff5a", "#9b30ff"], lantern: ["#ff7a00", "#8dff6a"],
-};
-function buildFlames() {
-  const f = $("ballFlames");
-  f.innerHTML = "";
-  for (let i = 0; i < 9; i++) {
-    const fl = document.createElement("div");
-    fl.className = "flame";
-    fl.style.transform = `rotate(${i * 40}deg)`;
-    fl.innerHTML = "<i></i>";
-    fl.firstChild.style.animationDelay = (-Math.random() * 0.3).toFixed(2) + "s";
-    fl.firstChild.style.animationDuration = (0.16 + Math.random() * 0.12).toFixed(2) + "s";
-    f.appendChild(fl);
-  }
-}
+// Which pixel flame ring the ball wears: the ability's color, or plain fire for momentum
+const RING_OF = { none: "fire", fire: "hot", shadow: "shadow", tidal: "tidal", toxic: "toxic", seed: "seed", lantern: "lantern" };
+function buildFlames() { /* the ring is a sprite now; nothing to build */ }
 function primaryFx() {
   for (const k of ["shadow", "toxic", "tidal", "lantern", "fire", "seed"]) if (M.fx.has(k)) return k;
   return "none";
 }
+let ringFrame = 0, ringInfo = null;
+setInterval(() => {
+  if (!ringInfo) return;
+  ringFrame = (ringFrame + 1) % ringInfo.frames;
+  $("ballFlames").style.backgroundPosition = `${-ringFrame * ringInfo.w * ringInfo.s}px 0`;
+}, 90);
 function updateFlames() {
   if (!M) return;
   const lvl = M.poss ? levelFor(M.poss) : 0;
+  const kind = primaryFx();
   const f = $("ballFlames");
-  f.classList.toggle("on", lvl > 0);
-  // width and margins are both % of the court width, so negative half-width margins keep it centered on the ball
-  const w = lvl > 0 ? 4 * (1.3 + 0.3 * lvl) : 0;
-  f.style.width = w + "%";
-  f.style.marginLeft = f.style.marginTop = -w / 2 + "%";
-  let [a, b] = FLAME_COLORS[primaryFx()];
-  if (primaryFx() === "none" && lvl >= 5) [a, b] = ["#ffffff", "#ffb020"];
-  f.style.setProperty("--fa", a);
-  f.style.setProperty("--fb", b);
-  // ability swirl
-  const ring = $("ballFx");
-  const kinds = [...M.fx];
-  ring.classList.toggle("on", kinds.length > 0);
-  if (kinds.length) {
-    const stops = kinds.flatMap((k) => FX_RING[k]);
-    ring.style.background = `conic-gradient(${[...stops, stops[0]].join(", ")})`;
-    const rw = 8 + lvl;
-    ring.style.width = rw + "%";
-    ring.style.marginLeft = ring.style.marginTop = -rw / 2 + "%";
-  }
+  const show = lvl > 0 || kind !== "none";
+  f.classList.toggle("on", show);
+  if (!show) { ringInfo = null; return; }
+  const tier = lvl >= 5 ? 3 : lvl >= 3 ? 2 : 1;
+  const pal = kind === "none" && lvl >= 5 ? "hot" : RING_OF[kind];
+  const name = `ring_${pal}_${tier}`;
+  const info = sheetInfo(name), sc = fxScale();
+  ringInfo = { ...info, s: sc };
+  const w = info.w * sc;
+  f.style.width = f.style.height = w + "px";
+  f.style.marginLeft = f.style.marginTop = -w / 2 + "px";
+  f.style.backgroundImage = `url(assets/fx/${name}.png)`;
+  f.style.backgroundSize = `${info.frames * w}px ${w}px`;
+  f.style.backgroundPosition = `${-ringFrame * w}px 0`;
 }
 
 // ---------- animation helpers ----------
@@ -425,9 +470,10 @@ function setBallFx(list) {
   updateFlames();
 }
 
-function particle(x, y, kind, drift = null) {
+function particle(x, y, kind, drift = null, color = null) {
   const el = document.createElement("div");
   el.className = "particle " + kind + (drift ? " drift" : "");
+  if (color) el.style.setProperty("--pc", color);
   el.style.left = x + "%";
   el.style.top = y + "%";
   if (drift) { el.style.setProperty("--dx", drift[0] + "px"); el.style.setProperty("--dy", drift[1] + "px"); }
@@ -441,29 +487,18 @@ function spray(x, y, kind, n = 12, spread = 60) {
     particle(x, y, kind, [Math.cos(a) * r, Math.sin(a) * r * (rises ? 0.5 : 1) - (rises ? r * 0.9 : 10)]);
   }
 }
-// flat shockwave on the floor
+// flat pixel shockwave on the floor
+const WAVE_OF = { "#ffffff": "white", "#ffd65c": "gold", "#ffcc33": "gold", "#ffb347": "gold", "#ff6a00": "orange", "#ffb020": "orange",
+  "#ff8c1a": "orange", "#b14dff": "purple", "#4fc3ff": "blue", "#bfeaff": "blue", "#5fd35f": "green", "#7dff5a": "toxic" };
 function ripple(x, gy, color, size = 12) {
-  const el = document.createElement("div");
-  el.className = "ripple";
-  el.style.left = x + "%";
-  el.style.top = gy + "%";
-  el.style.width = size + "%";
-  el.style.setProperty("--c", color);
-  $("fxLayer").appendChild(el);
-  setTimeout(() => el.remove(), 650);
+  const k = Math.max(1, Math.round(size / 12));
+  playSprite("wave_" + (WAVE_OF[color] || "gold"), x, gy, { scale: fxScale() * k, frameMs: 60 });
 }
-// light streaks shooting out from a point
+// little pixel sparks shooting outward
 function streaks(x, y, color, n = 8, len = 6) {
   for (let i = 0; i < n; i++) {
-    const el = document.createElement("div");
-    el.className = "streak";
-    el.style.left = x + "%";
-    el.style.top = y + "%";
-    el.style.setProperty("--a", (i / n) * 360 + Math.random() * 20 + "deg");
-    el.style.setProperty("--len", len * (0.6 + Math.random() * 0.6) + "%");
-    el.style.setProperty("--c", color);
-    $("fxLayer").appendChild(el);
-    setTimeout(() => el.remove(), 500);
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.3, r = len * (9 + Math.random() * 6);
+    particle(x, y, "spark", [Math.cos(a) * r, Math.sin(a) * r], color);
   }
 }
 function drops(x, y, n = 12, spread = 70) {
@@ -561,24 +596,38 @@ function abilityFx(side, team, pos) {
   pop(side, pos, c.active.name + "!", "ability");
   log(`<span class="abil">${who(side, c)} used ${c.active.name}!</span>`);
   switch (c.active.id) {
-    case "fireball": spray(h.x, h.y + 6, "fire", 18, 55); streaks(h.x, h.y + 6, "#ff7a1a", 10, 5); break;
-    case "shadowStrike": spray(h.x, h.y + 6, "smoke", 8, 40); streaks(h.x, h.y + 6, "#b14dff", 10, 5); break;
-    case "tidalSet": drops(h.x, h.y + 8, 18, 60); ripple(f.x, f.y, "#4fc3ff", 14); ripple(f.x, f.y, "#bfeaff", 8); break;
-    case "sneakySeed": spray(h.x, h.y + 6, "seed", 12, 40); break;
-    case "venomSpike": spray(h.x, h.y + 6, "toxic", 16, 50); spray(h.x, h.y + 6, "bubble", 8, 40); streaks(h.x, h.y + 6, "#7dff5a", 8, 5); break;
+    case "fireball": playSprite("puff_fire", h.x, h.y + 4); streaks(h.x, h.y + 6, "#ffc83a", 8, 5); break;
+    case "shadowStrike": playSprite("puff_shadow", h.x, h.y + 4); streaks(h.x, h.y + 6, "#c58bff", 8, 5); break;
+    case "venomSpike": playSprite("puff_toxic", h.x, h.y + 4); streaks(h.x, h.y + 6, "#9dff5a", 8, 5); break;
+    case "tidalSet": playSprite("puff_tidal", f.x, f.y, { anchor: "bottom" }); ripple(f.x, f.y, "#4fc3ff", 14); break;
+    case "sneakySeed": playSprite("puff_seed", h.x, h.y + 4); break;
     case "lanternSet": {
-      spray(h.x, h.y + 6, "lantern", 14, 50); spray(h.x, h.y + 6, "ghost", 6, 60);
-      // the other team's front row gets spooked
+      playSprite("puff_lantern", h.x, h.y + 4);
+      // the other team's front row gets spooked: little purple ghost flames over each blocker
       const oSide = other(side), O = teamOf(oSide);
-      Rules.FRONT.forEach((bp) => { anim(O.at[bp], "shake"); pop(oSide, bp, "Spooked!", "bad"); const g = headPt(oSide, bp); spray(g.x, g.y + 8, "ghost", 3, 30); });
+      Rules.FRONT.forEach((bp) => {
+        anim(O.at[bp], "shake");
+        pop(oSide, bp, "Spooked!", "bad");
+        const g = headPt(oSide, bp);
+        const a = playSprite("flame_shadow", g.x - 1.2, g.y + 4, { anchor: "bottom", loop: true, frameMs: 80 });
+        const b = playSprite("flame_shadow", g.x + 1.4, g.y + 6, { anchor: "bottom", loop: true, frameMs: 95 });
+        setTimeout(() => { a.remove(); b.remove(); }, 1400);
+      });
       break;
     }
-    case "hornWall": streaks(f.x, f.y - 10, "#ffb347", 8, 5); addShield(side, pos); break;
-    case "deepRoots": spray(f.x, f.y - 3, "leaf", 14, 40); ripple(f.x, f.y, "#5fd35f", 10); break;
+    case "hornWall": playSprite("puff_gold", f.x, f.y - 8); addShield(side, pos); break;
+    case "deepRoots": playSprite("puff_seed", f.x, f.y - 4); ripple(f.x, f.y, "#5fd35f", 12); break;
+    case "cactusCover":
+      playSprite("puff_seed", f.x, f.y - 6);
+      Rules.POSITIONS.filter((p) => p !== pos && Rules.dist(side, p, pos) === 1).forEach((p) => {
+        const ff = feet(side, p);
+        ripple(ff.x, ff.y, "#5fd35f", 10);
+      });
+      break;
     case "stampede":
       Rules.POSITIONS.forEach((p) => {
         const ff = feet(side, p);
-        spray(ff.x, ff.y - 1, "dust", 6, 30);
+        playSprite("puff_dust", ff.x, ff.y, { anchor: "bottom" });
         anim(team.at[p], "dig");
       });
       courtShake("s");
@@ -587,68 +636,41 @@ function abilityFx(side, team, pos) {
   updateStatus();
 }
 function addShield(side, pos) {
-  const el = document.createElement("div");
-  el.className = "shield";
-  el.dataset.side = side;
-  el.style.left = (side === "player" ? 46.5 : 53.5) + "%";
-  el.style.top = feet(side, pos).y - 12 + "%";
-  $("fxLayer").appendChild(el);
+  const el = playSprite("shield", side === "player" ? 47 : 53, feet(side, pos).y - 9, { loop: true, frameMs: 110 });
+  el.classList.add("shield-fx");
 }
 function clearRallyFx() {
-  document.querySelectorAll(".shield").forEach((el) => el.remove());
+  document.querySelectorAll(".shield-fx").forEach((el) => el.remove());
 }
 
-// Big, satisfying hit landing: the effect matches the ball's ability, and gets
-// bigger and brighter with more power and momentum.
+// Big, satisfying hit landing: a pixel explosion that matches the ball's ability,
+// drawn bigger (chunkier) and with more shake the more power and momentum there is.
+const BOOM_OF = { fire: "fire", flame: "fire", shadow: "shadow", toxic: "toxic", tidal: "tidal", seed: "seed", lantern: "lantern" };
+const WAVE_COLOR = { fire: "#ff6a00", flame: "#ffb020", shadow: "#b14dff", toxic: "#7dff5a", tidal: "#4fc3ff", seed: "#5fd35f", lantern: "#ff8c1a", spark: "#ffd65c" };
 function spikeImpact(pt, power, level) {
   const tier = power >= 105 || level >= 5 ? 3 : power >= 88 || level >= 3 ? 2 : power >= 70 ? 1 : 0;
   const kinds = [...M.fx];
-  if (!kinds.length) kinds.push(level >= 2 ? "flame" : "spark");
+  if (!kinds.length) kinds.push(level >= 1 || tier >= 2 ? "flame" : "spark");
   const x = pt.x, y = pt.y + 8, gy = pt.gy;
-  const main = { fire: "#ff6a00", shadow: "#b14dff", tidal: "#4fc3ff", seed: "#5fd35f", flame: "#ffb020", spark: "#ffd65c", toxic: "#7dff5a", lantern: "#ff8c1a" };
+  const S = fxScale();
   if (tier >= 1) courtShake(["s", "s", "m", "l"][tier]);
-  kinds.forEach((k) => {
-    const n = 6 + tier * 6;
-    switch (k) {
-      case "fire":
-      case "flame":
-        spray(x, y, "fire big", n, 45 + tier * 25);
-        spray(x, y, "ember", n, 70 + tier * 25);
-        streaks(x, y, "#ff7a1a", 6 + tier * 3, 5 + tier * 2);
-        break;
-      case "shadow":
-        spray(x, y, "smoke", 4 + tier * 3, 40 + tier * 20);
-        streaks(x, y, "#c77dff", 8 + tier * 3, 6 + tier * 2);
-        spray(x, y, "shadow", n, 60 + tier * 25);
-        break;
-      case "tidal":
-        drops(x, y, n + 6, 50 + tier * 20);
-        streaks(x, y, "#9be3ff", 6 + tier * 2, 5 + tier * 2);
-        ripple(x, gy, "#bfeaff", 10 + tier * 5);
-        break;
-      case "seed":
-        spray(x, y, "leaf", n, 50 + tier * 20);
-        spray(x, y, "seed", n, 40 + tier * 20);
-        break;
-      case "toxic":
-        spray(x, y, "toxic", n, 50 + tier * 20);
-        spray(x, y, "bubble", 4 + tier * 3, 40 + tier * 20);
-        spray(x, y, "smoke", 2 + tier * 2, 40);
-        streaks(x, y, "#7dff5a", 6 + tier * 3, 5 + tier * 2);
-        break;
-      case "lantern":
-        spray(x, y, "fire big", n, 45 + tier * 20);
-        spray(x, y, "ghost", 3 + tier * 2, 60 + tier * 20);
-        streaks(x, y, "#ff9a1a", 6 + tier * 3, 5 + tier * 2);
-        break;
-      default:
-        streaks(x, y, "#ffd65c", 6 + tier * 3, 4 + tier * 2);
-        spray(x, y, "spark", n, 40 + tier * 20);
-    }
+  kinds.forEach((k, i) => {
+    setTimeout(() => {
+      if (!M) return;
+      if (k === "spark") {
+        playSprite(tier >= 1 ? "puff_gold" : "sparkle", x, y, { scale: S + (tier >= 1 ? 1 : 0) });
+      } else if (tier === 0) {
+        playSprite("puff_" + BOOM_OF[k], x, y, { scale: S + 1 });
+      } else {
+        const name = "boom_" + BOOM_OF[k];
+        playSprite(name, x, k === "tidal" ? gy : y, { scale: S + (tier >= 2 ? 1 : 0) + (tier >= 3 ? 1 : 0), anchor: k === "tidal" ? "bottom" : "center", frameMs: 60 });
+      }
+    }, i * 70);
   });
-  ripple(x, gy, main[kinds[0]], 8 + tier * 6);
-  if (tier >= 2) flash(main[kinds[0]]);
-  if (tier >= 3) { flash("#ffffff"); streaks(x, y, "#ffffff", 12, 12); }
+  ripple(x, gy, WAVE_COLOR[kinds[0]], 8 + tier * 6);
+  if (tier >= 2) streaks(x, y, WAVE_COLOR[kinds[0]], 6 + tier * 3, 5 + tier);
+  if (tier >= 2) flash(WAVE_COLOR[kinds[0]]);
+  if (tier >= 3) flash("#ffffff");
 }
 
 // ---------- abilities (player) ----------
@@ -980,6 +1002,14 @@ async function playRally() {
 
     if (incoming.fromOpp) {
       M.poss = side;
+      const coverer = Rules.coverPos(T, incoming.pos, incoming.kind);
+      if (coverer !== incoming.pos) {
+        // Cactus Cover: Desacti dives in front of a teammate
+        pop(side, coverer, "Cactus Cover!", "ability");
+        await flyBall(headPt(side, coverer), 220, 4);
+        playSprite("puff_seed", feet(side, coverer).x, feet(side, coverer).y - 6);
+        incoming.pos = coverer;
+      }
       setBallFx([]);
       const rc = T.at[incoming.pos];
       const r = Rules.receive(T, incoming.pos, incoming.power, incoming.kind, incoming.aim);
@@ -1002,7 +1032,7 @@ async function playRally() {
         anim(rc, "shake");
         pop(side, r.savedBy, "Nine Lives!", "ability");
         const fp = headPt(side, r.savedBy);
-        spray(fp.x, fp.y + 10, "seed", 12, 50);
+        playSprite("puff_seed", fp.x, fp.y + 8);
         await flyBall(fp, 350, 8);
         anim(T.at[r.savedBy], "dig");
         holder = r.savedBy;
@@ -1012,7 +1042,7 @@ async function playRally() {
         if (r.ability) {
           pop(side, holder, r.ability, "ability");
           const f = feet(side, holder);
-          spray(f.x, f.y - 6, "leaf", 14, 50);
+          playSprite("puff_seed", f.x, f.y - 6);
           ripple(f.x, f.y, "#5fd35f", 12);
         } else {
           const [w, k] = r.quality >= 80 ? ["Perfect pass!", "good"] : r.quality >= 55 ? ["Nice dig!", "good"] : r.quality >= 30 ? ["Okay", ""] : ["Shaky…", "bad"];
@@ -1025,12 +1055,13 @@ async function playRally() {
           pop(side, holder, "Prickly", "passive");
           pop(incoming.attackerSide, ap, "Poisoned!", "ability");
           const g = headPt(incoming.attackerSide, ap);
-          spray(g.x, g.y + 10, "toxic", 8, 30);
+          playSprite("puff_toxic", g.x, g.y + 8);
         }
       }
       q = r.quality; touch = 1; isSet = false;
       const bigDig = incoming.kind === "spike" && incoming.power >= 80 && q >= 55;
       swing(side, bigDig ? 2 : Rules.comboGain("pass", q), holder, bigDig ? "Big dig! Momentum swing" : null);
+      if (bigDig && T.at[holder].passive.id === "desertCalm") swing(side, 1, holder, "Desert Calm");
       updateStatus();
     } else {
       holder = incoming.pos; q = incoming.quality; touch = incoming.touch; isSet = incoming.isSet;
@@ -1110,7 +1141,8 @@ async function playRally() {
         await flyBall({ x: side === "player" ? 48 : 52, y: bp.y - 4, gy: bp.gy }, 260, 2);
         pop(other(side), res.blockerPos, "BLOCKED!", "big");
         popPassives(other(side), res.blockerPos, res.blockerPassives);
-        streaks(side === "player" ? 49 : 51, bp.y + 6, "#7ad8ff", 10, 6);
+        playSprite("puff_gold", side === "player" ? 49 : 51, bp.y + 6);
+        streaks(side === "player" ? 49 : 51, bp.y + 6, "#bfeaff", 10, 6);
         courtShake("s");
         setBallFx([]);
         const fall = feet(side, holder);
@@ -1127,6 +1159,8 @@ async function playRally() {
         const victim = O.at[action.target];
         victim.poison = 3; // this rally + the next two
         pop(other(side), action.target, "Poisoned!", "ability");
+        const vp = headPt(other(side), action.target);
+        playSprite("puff_toxic", vp.x, vp.y + 8);
         log(`<span class="abil">${who(other(side), victim)} is Poisoned!</span>`);
         updateStatus();
       }
@@ -1147,7 +1181,7 @@ async function playRally() {
       }
       log(`${who(side, hc)} attacks on the 2nd touch!`);
       await flyBall(tgt, 450, 10);
-      spray(tgt.x, tgt.y + 6, "seed", 10, 40);
+      playSprite("puff_seed", tgt.x, tgt.y + 6);
       incoming = { fromOpp: true, side: other(side), pos: action.target, power: res.power, kind: "spike", aim: res.aimMult };
       continue;
     }
@@ -1178,5 +1212,6 @@ function backToBuilder() {
   tip.classList.add("hidden");
   renderBuilder();
 }
+window.addEventListener("resize", () => { if (M) { $("court").style.setProperty("--px", fxScale() + "px"); updateFlames(); } });
 $("quitMatch").addEventListener("click", backToBuilder);
 $("playAgain").addEventListener("click", backToBuilder);

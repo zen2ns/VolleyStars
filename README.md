@@ -8,7 +8,8 @@ A turn-based creature volleyball game that runs in the browser.
 - `js/creatures.js`: creature stats, classes, abilities text (edit this to balance)
 - `js/rules.js`: all the game math + the CPU's brain (CONFIG at the top has the main knobs)
 - `js/game.js`: screens, animations and match flow
-- `assets/`: art
+- `assets/`: art (`assets/fx/` = pixel effect sprite sheets)
+- `tools/make_fx.py`: redraws all the pixel effects (`python3 tools/make_fx.py`, needs Pillow)
 
 ## How to play
 1. Place 6 creatures in positions 1–6. Spot 1 serves. You rotate clockwise each time you win the serve back.
