@@ -161,7 +161,7 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 
 /* ---------- creatures on court ---------- */
 .crt {
-  position: absolute; width: 11%; transform: translate(-50%, -100%);
+  position: absolute; width: 7.5%; transform: translate(-50%, -100%);
   transition: left 0.7s ease-in-out, top 0.7s ease-in-out;
   --k: 0; --b: 0;
 }
@@ -216,10 +216,10 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
   font-size: clamp(0.5rem, 1.05vw, 0.78rem); font-weight: bold; white-space: nowrap;
   background: #000b; color: #fff; padding: 0 6px; border-radius: 6px; transition: box-shadow 0.3s, color 0.3s;
 }
-.crt.player .tag { color: #bfe0ff; }
-.crt.cpu .tag { color: #ffc4ca; }
+.crt.player .tag { color: #fff; background: #1f63c9e6; }
+.crt.cpu .tag { color: #fff; background: #c92a3ae6; }
 .crt .tag.ready { box-shadow: 0 0 0 2px #c58bff, 0 0 10px #b14dff; }
-.crt.winded .tag { color: #8a93a6; font-style: italic; }
+.crt.winded .tag { opacity: 0.7; font-style: italic; }
 
 .abil-btn {
   position: absolute; top: 12%; left: 50%; transform: translateX(-50%); z-index: 9; white-space: nowrap;
@@ -244,7 +244,7 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .ball { z-index: 9; }
 /* ability aura swirling around the ball */
 .ball-fx {
-  position: absolute; width: 10%; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%);
+  position: absolute; width: 10%; aspect-ratio: 1; border-radius: 50%; margin: -5% 0 0 -5%;
   z-index: 7; pointer-events: none; opacity: 0; transition: opacity 0.25s;
   filter: blur(3px); animation: spin 0.9s linear infinite;
   -webkit-mask: radial-gradient(circle, #000 0 28%, #0008 45%, transparent 68%);
@@ -253,8 +253,8 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .ball-fx.on { opacity: 0.95; }
 /* momentum flames around the ball */
 .ball-flames {
-  position: absolute; aspect-ratio: 1; transform: translate(-50%, -50%); z-index: 8; pointer-events: none;
-  width: 0; opacity: 0; transition: width 0.3s, opacity 0.3s; animation: spin 2.4s linear infinite;
+  position: absolute; aspect-ratio: 1; z-index: 8; pointer-events: none;
+  width: 0; opacity: 0; transition: width 0.3s, margin 0.3s, opacity 0.3s; animation: spin 2.4s linear infinite;
   --fa: #fff3a0; --fb: #ff9a1a;
 }
 .ball-flames.on { opacity: 1; }

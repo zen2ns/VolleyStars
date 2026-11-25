@@ -214,7 +214,7 @@ function log(html) {
 // ---------- court geometry (percent of the court box) ----------
 const XS = { player: { back: 17.75, front: 39.25, serve: 5 }, cpu: { front: 60.75, back: 82.25, serve: 95 } };
 const LANE_Y = [31, 59, 87];
-const HEAD = 23; // how far above the feet the ball sits
+const HEAD = 16; // how far above the feet the ball sits
 
 function feet(side, pos) {
   return { x: XS[side][Rules.isFront(pos) ? "front" : "back"], y: LANE_Y[Rules.lane(side, pos)] };
@@ -382,7 +382,10 @@ function updateFlames() {
   const lvl = M.poss ? levelFor(M.poss) : 0;
   const f = $("ballFlames");
   f.classList.toggle("on", lvl > 0);
-  f.style.width = lvl > 0 ? 4 * (1.6 + 0.4 * lvl) + "%" : "0";
+  // width and margins are both % of the court width, so negative half-width margins keep it centered on the ball
+  const w = lvl > 0 ? 4 * (1.3 + 0.3 * lvl) : 0;
+  f.style.width = w + "%";
+  f.style.marginLeft = f.style.marginTop = -w / 2 + "%";
   let [a, b] = FLAME_COLORS[primaryFx()];
   if (primaryFx() === "none" && lvl >= 5) [a, b] = ["#ffffff", "#ffb020"];
   f.style.setProperty("--fa", a);
@@ -394,7 +397,9 @@ function updateFlames() {
   if (kinds.length) {
     const stops = kinds.flatMap((k) => FX_RING[k]);
     ring.style.background = `conic-gradient(${[...stops, stops[0]].join(", ")})`;
-    ring.style.width = 10 + lvl * 1.2 + "%";
+    const rw = 8 + lvl;
+    ring.style.width = rw + "%";
+    ring.style.marginLeft = ring.style.marginTop = -rw / 2 + "%";
   }
 }
 
@@ -518,7 +523,7 @@ function pop(side, pos, text, kind = "") {
   el.textContent = text;
   el.style.left = f.x + "%";
   // passive text sits just under the name tag; everything else above the head
-  el.style.top = (kind === "passive" ? f.y + 7 + n * 3.5 : f.y - 13 - n * 5) + "%";
+  el.style.top = (kind === "passive" ? f.y + 7 + n * 3.5 : f.y - 15 - n * 4) + "%";
   $("court").appendChild(el);
   setTimeout(() => { el.remove(); popStack.set(key, Math.max(0, (popStack.get(key) || 1) - 1)); }, 1300);
 }
