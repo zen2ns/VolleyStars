@@ -68,4 +68,18 @@ const CREATURES = [
     passive: { id: "steadyHooves", name: "Steady Hooves", text: "Its passes are much more consistent." },
     active: { id: "stampede", name: "Stampede", text: "The whole team receives better for this rally." },
   },
+  {
+    id: "toxipine", name: "Toxipine", looks: ["assets/creatures/toxipine.png"],
+    classes: ["spiker", "receiver"],
+    str: 70, ctrl: 62, def: 78, per: 60,
+    passive: { id: "prickly", name: "Prickly", text: "Any spiker whose spike Toxipine digs gets Poisoned." },
+    active: { id: "venomSpike", name: "Venom Spike", text: "A toxic spike. Whoever it's aimed at is Poisoned (digs and passes much worse) for this rally and the next two." },
+  },
+  {
+    id: "snumpkin", name: "Snumpkin", looks: ["assets/creatures/snumpkin.png"],
+    classes: ["setter"],
+    str: 58, ctrl: 82, def: 55, per: 66,
+    passive: { id: "longBody", name: "Long Body", text: "No penalty for passing or setting far away." },
+    active: { id: "lanternSet", name: "Jack-o'-Lantern Set", text: "A spooky set: the other team's blockers are too scared to block the next spike, and momentum swings hard your way." },
+  },
 ];

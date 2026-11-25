@@ -16,9 +16,11 @@ const CONFIG = {
   backRowSetAdjust: -6,     // setting from the back row is a bit worse
   windedMult: 0.8,          // a spiker who spiked recently hits weaker
 
-  // Combo: each good touch in one chain (pass -> set -> spike) adds a level.
-  // Every level makes the spike this much stronger. Resets when the ball crosses the net.
+  // Momentum: one shared tug-of-war meter per rally (-6 CPU ... +6 you).
+  // Good touches swing it your way; every level on your side makes your spikes this much stronger.
+  momentumMax: 6,
   comboPowerPerLevel: 0.07,
+  adaptPerLevel: 0.08,      // "Adapting": each recent spike at a creature makes it dig this much better
   comboPerfectPass: 75,     // pass/dig quality needed for a combo level
   comboPerfectSet: 80,      // set quality needed for a combo level
 
@@ -76,6 +78,8 @@ Rules.makeInstance = (base, lookIndex = 0) => ({
   cooldown: 0,      // rallies until the active can be used again
   winded: 0,        // > 0 means it spiked recently and hits weaker
   spikes: 0,        // spikes this game (for Heating Up)
+  read: 0,          // Adapting: goes up when spiked at, fades each rally
+  poison: 0,        // Poisoned: rallies left of digging/passing worse
 });
 
 Rules.makeTeam = (side, at, mult) => ({ side, at, mult, buffs: {}, nineLivesUsed: false });
@@ -86,6 +90,8 @@ Rules.endRally = (team) => {
     const c = team.at[p];
     if (c.cooldown > 0) c.cooldown--;
     if (c.winded > 0) c.winded--;
+    if (c.read > 0) c.read--;
+    if (c.poison > 0) c.poison--;
   });
   team.buffs = {};
 };
@@ -98,7 +104,9 @@ Rules.abilityReady = (team, pos, ctx) => {
   const holding = ctx.holderPos === pos && !ctx.serve;
   switch (c.active.id) {
     case "fireball":
+    case "venomSpike":
     case "shadowStrike": return holding && ctx.canSpike;
+    case "lanternSet":
     case "tidalSet":     return holding && ctx.touch === 2;
     case "sneakySeed":   return holding && ctx.touch === 2;
     case "hornWall":     return Rules.isFront(pos) && !team.buffs.hornWall;
@@ -127,6 +135,8 @@ Rules.serve = (team, type, timing = "ok") => {
   if (Math.random() < outChance) return { fault: true };
   return { power: (Rules.eff(team, s, "str") * 0.85 + Rules.rand(0, 15)) * t.power };
 };
+// Hard serves can only be aimed at the back row; floats can go anywhere
+Rules.serveTargets = (type) => (type === "hard" ? [1, 5, 6] : Rules.POSITIONS);
 Rules.servePowerEstimate = (team, type) => {
   const s = team.at[1];
   return type === "float" ? Rules.eff(team, s, "str") * 0.45 + 20 : (Rules.eff(team, s, "str") * 0.85 + 7) * 1.1;
@@ -140,8 +150,11 @@ function receiveSkill(team, pos, kind) {
   let rooted = false;
   if (c.passive.id === "rooted" && !Rules.isFront(pos) && kind === "spike") { skill *= 1.15; rooted = true; }
   if (team.buffs.stampede) skill *= 1.15;
+  if (c.poison > 0) skill *= 0.72; // Poisoned
+  const adapting = kind === "spike" && c.read > 0;
+  if (adapting) skill *= 1 + CONFIG.adaptPerLevel * c.read;
   const cls = Rules.has(c, "receiver") ? CONFIG.classBonus : CONFIG.classPenalty;
-  return { skill: skill * cls, spread: c.passive.id === "steadyHooves" ? 10 : 20, rooted };
+  return { skill: skill * cls, spread: c.passive.id === "steadyHooves" ? 10 : 20, rooted, adapting };
 }
 
 // Receiving a ball from the other side. kind = "serve" | "spike" | "free".
@@ -155,6 +168,9 @@ Rules.receive = (team, pos, power, kind, aimMult = 1) => {
     return { quality: 95, ability: "Deep Roots!", passives };
   }
   const r = receiveSkill(team, pos, kind);
+  if (kind === "spike") c.read = Math.min(3, c.read + 1); // reads the next one better
+  if (r.adapting) passives.push("Adapting");
+  if (c.poison > 0) passives.push("Poisoned…");
   if (r.rooted) passives.push("Rooted");
   if (c.passive.id === "steadyHooves") passives.push("Steady Hooves");
   const quality = CONFIG.receiveBase + (r.skill * aimMult - power) + Rules.rand(-r.spread, r.spread);
@@ -179,6 +195,7 @@ Rules.shankChance = (team, pos, power, kind, aimMult = 1) => {
 };
 
 function farPenalty(team, c, from, to) {
+  if (c.passive.id === "longBody") return 0;
   const d = Rules.dist(team.side, from, to);
   return Math.max(0, (d - 1) * 14 * (1 - Rules.eff(team, c, "str") / 130));
 }
@@ -187,15 +204,18 @@ function farPenalty(team, c, from, to) {
 Rules.bump = (team, from, to, inQ) => {
   const c = team.at[from];
   const spread = c.passive.id === "steadyHooves" ? 5 : 10;
-  const q = inQ * 0.55 + Rules.eff(team, c, "ctrl") * 0.45 - farPenalty(team, c, from, to) + Rules.rand(-spread, spread);
+  const poisoned = c.poison > 0 ? 12 : 0;
+  const q = inQ * 0.55 + Rules.eff(team, c, "ctrl") * 0.45 - poisoned - farPenalty(team, c, from, to) + Rules.rand(-spread, spread);
   return { quality: Rules.clamp(q, 0, 100), error: q < CONFIG.errorBelow, passives: spread === 5 ? ["Steady Hooves"] : [] };
 };
 
 // Touch 2 -> 3: a set. Setters are much better at it.
-Rules.set = (team, from, to, inQ, tidal = false) => {
+Rules.set = (team, from, to, inQ, tidal = false, lantern = false) => {
   const c = team.at[from];
   if (tidal) { team.buffs.tidal = true; return { quality: 100, passives: [] }; }
+  if (lantern) team.buffs.spooked = true; // the other team's blockers are too scared to block
   const passives = [];
+  if (c.passive.id === "longBody" && Rules.dist(team.side, from, to) > 1) passives.push("Long Body");
   const cls = Rules.has(c, "setter") ? CONFIG.classBonus : CONFIG.classPenalty;
   let q = (inQ * 0.4 + Rules.eff(team, c, "ctrl") * 0.6) * cls - farPenalty(team, c, from, to);
   if (!Rules.isFront(from)) {
@@ -223,10 +243,12 @@ Rules.aim = (atkSide, fromPos, defSide, targetPos) => {
   const laneDiff = Math.abs(sLane - tLane);
   const deep = !Rules.isFront(targetPos);
   const edge = tLane !== 1;
+  // Front row: harder to dig (but more likely to get blocked, see blockChances).
+  // Back row: easier to dig, rarely blocked.
   return {
-    sLane, tLane, line: laneDiff === 0,
-    risk: (deep ? 0.03 : 0) + (edge ? 0.02 : 0) + laneDiff * 0.015,
-    aimMult: 1 - (deep ? 0.04 : 0) - (edge ? 0.04 : 0) - laneDiff * 0.03,
+    sLane, tLane, line: laneDiff === 0, deep,
+    risk: (deep ? 0.02 : 0) + (edge ? 0.02 : 0) + laneDiff * 0.015,
+    aimMult: 1 - (deep ? -0.02 : 0.08) - (edge ? 0.03 : 0) - laneDiff * 0.025,
   };
 };
 
@@ -237,6 +259,7 @@ Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
   if (!Rules.isFront(fromPos)) power *= CONFIG.backRowSpikeMult;
   if (c.winded > 0) power *= CONFIG.windedMult;
   if (special === "fireball") power *= 1.35;
+  if (special === "venomSpike") power *= 1.1;
   if (atk.buffs.tidal) power *= 1.15;
   if (c.passive.id === "heatingUp") power *= 1 + Math.min(0.2, 0.02 * c.spikes);
   power *= 1 + CONFIG.comboPowerPerLevel * combo;
@@ -247,6 +270,7 @@ Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
 // Line shot: the blocker straight ahead matters most. Cross shot: less, but the
 // blocker in the target's lane gets a chance too.
 Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
+  if (atk.buffs.spooked) return []; // Jack-o'-Lantern Set: nobody dares to block
   const spiker = atk.at[fromPos];
   const a = Rules.aim(atk.side, fromPos, def.side, targetPos);
   const out = [];
@@ -264,7 +288,8 @@ Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
     if (b.active.id === "hornWall" && def.buffs.hornWall) chance = Math.min(0.75, chance * 2.5);
     if (spiker.passive.id === "menacing") chance *= 0.65;
     if (!Rules.isFront(fromPos)) chance *= 0.7;
-    out.push({ pos: bp, chance: chance * weight });
+    chance *= a.deep ? 0.65 : 1.4; // hitting short into the front row runs into blockers
+    out.push({ pos: bp, chance: Math.min(0.8, chance * weight) });
   });
   return out;
 };
@@ -290,8 +315,10 @@ Rules.spike = (atk, fromPos, inQ, def, targetPos, timing, special, combo = 0) =>
   if (Math.random() < Rules.spikeOutChance(atk, fromPos, inQ, a.risk, timing)) {
     return { out: true, power, aimMult: a.aimMult, passives };
   }
+  const spooked = !!atk.buffs.spooked;
   if (special !== "shadowStrike") {
     const blocks = Rules.blockChances(atk, fromPos, def, targetPos, power);
+    atk.buffs.spooked = false;
     if (blocks.length && c.passive.id === "menacing") passives.push("Menacing");
     for (const b of blocks) {
       if (Math.random() < b.chance) {
@@ -300,7 +327,9 @@ Rules.spike = (atk, fromPos, inQ, def, targetPos, timing, special, combo = 0) =>
       }
     }
   }
-  return { power, aimMult: a.aimMult, passives };
+  atk.buffs.spooked = false;
+  if (spooked) passives.push("Blockers spooked!");
+  return { power, aimMult: a.aimMult, passives, poison: special === "venomSpike" };
 };
 
 // Estimated chance a spike at targetPos wins the point (for the red target glow)
@@ -337,10 +366,10 @@ const AI = {};
 AI.randomPos = () => Rules.POSITIONS[Math.floor(Math.random() * 6)];
 
 // Serve / free ball target: the weakest passer
-AI.easyTarget = (def, smart, power = 50) => {
-  if (Math.random() > smart) return AI.randomPos();
-  let best = 1, bestScore = -Infinity;
-  Rules.POSITIONS.forEach((p) => {
+AI.easyTarget = (def, smart, power = 50, options = Rules.POSITIONS) => {
+  if (Math.random() > smart) return options[Math.floor(Math.random() * options.length)];
+  let best = options[0], bestScore = -Infinity;
+  options.forEach((p) => {
     const sc = Rules.shankChance(def, p, power, "serve") + Rules.rand(0, 0.05);
     if (sc > bestScore) { bestScore = sc; best = p; }
   });
@@ -427,8 +456,8 @@ AI.decide = (team, opp, holder, touch, inIsSet, inQ, combo, smart) => {
       if (sc > bestScore) { bestScore = sc; best = p; }
     });
   }
-  const tidal = c.active.id === "tidalSet" && Rules.abilityReady(team, holder, ctx) && Math.random() < smart;
-  return { type: "set", target: best, special: tidal ? "tidalSet" : null };
+  const setAbility = ["tidalSet", "lanternSet"].includes(c.active.id) && Rules.abilityReady(team, holder, ctx) && Math.random() < smart;
+  return { type: "set", target: best, special: setAbility ? c.active.id : null };
 };
 
 // Build a CPU team of 6: spikers up front, passers in back

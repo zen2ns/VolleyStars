@@ -54,7 +54,9 @@
       <div class="hud-mid">
         <div id="step" class="step">GET READY</div>
         <div class="hud-sub">
-          <div id="power" class="power" title="Spike power from this combo chain"></div>
+          <div class="momentum-wrap"><span class="m-label you">YOU</span>
+            <div id="power" class="momentum" title="Momentum: good plays swing it your way and power up your spikes"><div id="mFill" class="m-fill"></div><div class="m-center"></div></div>
+            <span class="m-label cpu">CPU</span></div>
           <button id="freeToggle" class="btn toggle tiny hidden">Free ball instead</button>
         </div>
       </div>
@@ -75,7 +77,8 @@
       <div id="creatures"></div>
       <div id="fxLayer"></div>
       <div id="ballShadow" class="ball-shadow"></div>
-      <div id="ballAura" class="ball-aura"></div>
+      <div id="ballFx" class="ball-fx"></div>
+      <div id="ballFlames" class="ball-flames"></div>
       <div id="ball" class="ball"><img src="assets/volleyball.png" alt="ball"></div>
       <div id="banner" class="banner hidden"><div id="bannerTitle"></div><div id="bannerSub"></div></div>
       <div id="servePick" class="serve-pick hidden">
@@ -100,6 +103,7 @@
       <span><i class="lg block"></i>Blocker in the way</span>
       <span><i class="lg ready"></i>Ability ready</span>
       <span><i class="lg winded"></i>Faded = winded</span>
+      <span><i class="lg poison"></i>Poisoned</span>
     </div>
 
     <div class="under">
