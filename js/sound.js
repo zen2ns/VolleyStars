@@ -7,6 +7,8 @@
 const Sound = (() => {
   let ctx = null, sfxGain = null, musicGain = null;
   let sfxOn = true, musicOn = true;
+  let sfxVol = 0.8, musicVol = 0.6; // 0-1, from Settings
+  const SFX_MAX = 0.6, MUSIC_MAX = 0.22;
   try {
     sfxOn = localStorage.getItem("vs-sfx") !== "off";
     musicOn = localStorage.getItem("vs-music") !== "off";
@@ -17,8 +19,9 @@ const Sound = (() => {
     if (ctx) return;
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
-      sfxGain = ctx.createGain(); sfxGain.gain.value = sfxOn ? 0.5 : 0; sfxGain.connect(ctx.destination);
-      musicGain = ctx.createGain(); musicGain.gain.value = musicOn ? 0.14 : 0; musicGain.connect(ctx.destination);
+      sfxGain = ctx.createGain(); sfxGain.connect(ctx.destination);
+      musicGain = ctx.createGain(); musicGain.connect(ctx.destination);
+      applyGains();
       startMusic();
     } catch (e) { ctx = null; }
   }
@@ -144,15 +147,20 @@ const Sound = (() => {
     timer = setInterval(schedule, 30);
   }
 
+  function applyGains() {
+    if (sfxGain) sfxGain.gain.value = sfxOn ? SFX_MAX * sfxVol : 0;
+    if (musicGain) musicGain.gain.value = musicOn ? MUSIC_MAX * musicVol : 0;
+  }
+  function setVolumes(sfx, music) { sfxVol = sfx; musicVol = music; applyGains(); }
   function setSfx(on) {
     sfxOn = on;
     try { localStorage.setItem("vs-sfx", on ? "on" : "off"); } catch (e) {}
-    if (sfxGain) sfxGain.gain.value = on ? 0.5 : 0;
+    applyGains();
   }
   function setMusic(on) {
     musicOn = on;
     try { localStorage.setItem("vs-music", on ? "on" : "off"); } catch (e) {}
-    if (musicGain) musicGain.gain.value = on ? 0.14 : 0;
+    applyGains();
   }
-  return { play, setSfx, setMusic, get sfxOn() { return sfxOn; }, get musicOn() { return musicOn; } };
+  return { play, setSfx, setMusic, setVolumes, get sfxOn() { return sfxOn; }, get musicOn() { return musicOn; } };
 })();

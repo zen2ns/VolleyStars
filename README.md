@@ -5,6 +5,8 @@ A turn-based creature volleyball game that runs in the browser.
 ## Files
 - `index.html`: the page
 - `style.css`: how it looks (court, animations)
+- `js/stages.js`: the five Path checkpoints (team, ultimate, CPU skill), easy to edit
+- `js/menu.js`: main menu, the Path, Settings
 - `js/creatures.js`: creature stats, classes, abilities text (edit this to balance)
 - `js/rules.js`: all the game math + the CPU's brain (CONFIG at the top has the main knobs)
 - `js/game.js`: screens, animations and match flow
@@ -32,3 +34,8 @@ A turn-based creature volleyball game that runs in the browser.
 - Pick a team ultimate on the team screen: **Nuclear Spike**, **Combo Star** or **Iron Fortress**.
   Good plays fill the meter under your score; when it's full, the ultimate button appears at the top.
 - SFX / MUSIC buttons at the top turn sound on and off (all sounds are made in `js/sound.js`, no audio files).
+
+## Modes
+- **Free Play**: build any team (repeats allowed) vs a random CPU team you can preview and reroll.
+- **The Path**: beat 5 themed checkpoint teams in order. Progress is saved in your browser.
+- **Settings**: sound effect and music volume, points per game, reset Path progress.

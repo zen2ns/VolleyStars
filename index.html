@@ -8,18 +8,65 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- ================= MAIN MENU ================= -->
+  <section id="menu" class="menu-screen">
+    <div class="menu-sky"><div class="menu-sun"></div><div class="menu-cloud c1"></div><div class="menu-cloud c2"></div><div class="menu-cloud c3"></div></div>
+    <div class="menu-floor"><div class="menu-net"></div></div>
+    <div id="parade" class="parade"></div>
+    <div class="menu-center">
+      <div class="menu-logo">
+        <img src="assets/volleyball.png" alt="" class="menu-ball">
+        <h1 class="menu-title"><span>VOLLEY</span><span class="stars">STARS</span></h1>
+      </div>
+      <div class="menu-buttons">
+        <button id="menuFree" class="menu-btn"><b>Free Play</b><span>Build any team, pick a difficulty</span></button>
+        <button id="menuPath" class="menu-btn gold"><b>The Path</b><span>Beat 5 checkpoint teams in a row</span></button>
+        <button id="menuSettings" class="menu-btn"><b>Settings</b><span>Sound and game options</span></button>
+      </div>
+      <p class="menu-hint">Tip: click a creature running by!</p>
+    </div>
+  </section>
+
+  <!-- ================= PATH ================= -->
+  <section id="path" class="screen hidden">
+    <div class="screen-head">
+      <button class="btn secondary back-btn" data-go="menu">◂ Menu</button>
+      <h1>The Path</h1>
+      <span></span>
+    </div>
+    <p class="muted center">Beat each checkpoint to unlock the next. Click an open checkpoint to build your team.</p>
+    <div id="pathMap" class="path-map"></div>
+  </section>
+
+  <!-- ================= SETTINGS ================= -->
+  <section id="settings" class="screen hidden">
+    <div class="screen-head">
+      <button class="btn secondary back-btn" data-go="menu">◂ Menu</button>
+      <h1>Settings</h1>
+      <span></span>
+    </div>
+    <div class="panel settings-panel">
+      <label class="set-row"><span>Sound effects volume</span><input id="setSfx" type="range" min="0" max="100"><b id="setSfxVal"></b></label>
+      <label class="set-row"><span>Music volume</span><input id="setMusic" type="range" min="0" max="100"><b id="setMusicVal"></b></label>
+      <label class="set-row"><span>Points per game</span>
+        <select id="setPoints"><option value="7">First to 7</option><option value="11">First to 11</option><option value="15">First to 15</option><option value="25">First to 25</option></select><b></b></label>
+      <div class="set-row"><span>Path progress</span><button id="resetPath" class="btn secondary">Reset path progress</button><b id="resetMsg"></b></div>
+    </div>
+  </section>
+
   <!-- ================= TEAM BUILDER ================= -->
-  <section id="builder" class="screen">
-    <header class="title">
-      <img src="assets/volleyball.png" alt="" class="title-ball">
-      <h1>VolleyStars</h1>
-    </header>
+  <section id="builder" class="screen hidden">
+    <div class="screen-head">
+      <button id="builderBack" class="btn secondary back-btn">◂ Back</button>
+      <h1 id="builderTitle">Free Play</h1>
+      <span></span>
+    </div>
 
     <div class="builder-layout">
       <div class="panel">
         <h2>Pick your team <span class="muted">(6)</span></h2>
-        <p class="muted small">Click a creature, then click a spot on your court. Click a placed creature to take it off.
-          Hover a creature to see its abilities.</p>
+        <p class="muted small">Click a creature, then click spots on your court to place it (you can use the same creature more than once).
+          Click a placed creature with nothing selected to take it off. Hover a creature to see its abilities.</p>
         <div id="roster" class="roster"></div>
       </div>
 
@@ -35,7 +82,7 @@
         <p class="muted small">Good plays charge your ultimate meter. When it's full, unleash it.</p>
         <div id="ultPick" class="ult-pick"></div>
         <div class="builder-controls">
-          <label>CPU difficulty
+          <label id="diffLabel">CPU difficulty
             <select id="difficulty">
               <option value="easy">Easy</option>
               <option value="normal" selected>Normal</option>
@@ -46,6 +93,18 @@
           <button id="startMatch" class="btn primary" disabled>Start match</button>
         </div>
         <p id="builderMsg" class="muted small center"></p>
+      </div>
+
+      <div class="panel opp-panel">
+        <h2>Opponent</h2>
+        <div id="oppName" class="opp-name"></div>
+        <div id="oppTag" class="muted small opp-tag"></div>
+        <div class="court-preview">
+          <div class="row-labels opp-labels"><span class="net-label">◂ Net</span><span>Front row</span><span>Back row</span></div>
+          <div id="oppGrid" class="bgrid opp-grid"></div>
+        </div>
+        <div id="oppInfo" class="small opp-info"></div>
+        <button id="oppReroll" class="btn secondary small-btn">New random opponent</button>
       </div>
     </div>
   </section>
@@ -98,6 +157,7 @@
       <div id="ballFx" class="ball-fx"></div>
       <div id="ballFlames" class="ball-flames"></div>
       <div id="ball" class="ball"><img src="assets/volleyball.png" alt="ball"></div>
+      <div id="intro" class="intro hidden"></div>
       <div id="banner" class="banner hidden"><div id="bannerTitle"></div><div id="bannerSub"></div></div>
       <div id="servePick" class="serve-pick hidden">
         <div class="serve-title">Choose your serve</div>
@@ -139,7 +199,10 @@
     <div class="overlay-box">
       <h2 id="endTitle">You win!</h2>
       <p id="endScore"></p>
-      <button id="playAgain" class="btn primary">Back to team select</button>
+      <div class="end-buttons">
+        <button id="playAgain" class="btn primary">Back to team select</button>
+        <button id="endSecond" class="btn secondary">Main menu</button>
+      </div>
     </div>
   </div>
 
@@ -147,7 +210,9 @@
 
   <script src="js/sound.js"></script>
   <script src="js/creatures.js"></script>
+  <script src="js/stages.js"></script>
   <script src="js/rules.js"></script>
   <script src="js/game.js"></script>
+  <script src="js/menu.js"></script>
 </body>
 </html>

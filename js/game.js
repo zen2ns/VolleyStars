@@ -116,10 +116,11 @@ function renderRoster() {
   const order = "SABCD";
   [...CREATURES].sort((a, b) => order.indexOf(a.rank) - order.indexOf(b.rank)).forEach((c) => {
     const card = document.createElement("div");
-    const placed = placedPos(c.id) !== undefined;
-    card.className = "card" + (builder.selected === c.id ? " selected" : "") + (placed ? " placed" : "");
+    const count = Rules.POSITIONS.filter((p) => builder.slots[p] === c.id).length;
+    card.className = "card" + (builder.selected === c.id ? " selected" : "");
     card.innerHTML = `
       ${c.looks.length > 1 ? '<button class="look-btn" title="Change look">Look ⇄</button>' : ""}
+      ${count ? `<span class="on-team">×${count}</span>` : ""}
       <img src="${lookOf(c)}" alt="${c.name}">
       <div class="name">${rankHTML(c)} ${c.name}</div>
       ${badgesHTML(c)}
@@ -137,8 +138,8 @@ function renderRoster() {
       });
     }
     card.addEventListener("click", () => {
-      if (placed) builder.slots[placedPos(c.id)] = null;
-      else builder.selected = builder.selected === c.id ? null : c.id;
+      builder.selected = builder.selected === c.id ? null : c.id;
+      Sound.play("click");
       renderBuilder();
     });
     attachTooltip(card, () => c);
@@ -164,8 +165,8 @@ function renderBuilderGrid() {
     cell.addEventListener("click", () => {
       tip.classList.add("hidden");
       if (builder.selected) {
-        builder.slots[p] = builder.selected;
-        builder.selected = null;
+        builder.slots[p] = builder.selected; // stays selected so you can place copies
+        Sound.play("click");
       } else if (id) {
         builder.slots[p] = null;
       } else {
@@ -190,8 +191,54 @@ function renderUltPick() {
   });
 }
 
+// ---------- opponent (path checkpoint or random CPU team) ----------
+const DIFF_NAME = { easy: "Easy", normal: "Normal", hard: "Hard" };
+function setupOpponent() {
+  if (builder.mode === "path") {
+    const st = STAGES[builder.stage];
+    builder.opp = { team: { ...st.team }, looks: {}, ult: st.ult, smart: st.smart, timing: st.timing, name: st.name, tagline: st.tagline };
+    return;
+  }
+  const diff = $("difficulty").value, d = CONFIG.difficulty[diff];
+  const at = AI.buildTeam(CREATURES, d.team);
+  const team = {}, looks = {};
+  Rules.POSITIONS.forEach((p) => { team[p] = at[p].id; looks[p] = at[p].looks.indexOf(at[p].img); });
+  builder.opp = {
+    team, looks, ult: Object.keys(CONFIG.ultimates)[Math.floor(Math.random() * 3)],
+    smart: d.smart, timing: d.timing, name: "Random CPU team", tagline: `${DIFF_NAME[diff]} difficulty`,
+  };
+}
+function renderOpponent() {
+  if (!builder.opp) setupOpponent();
+  const o = builder.opp;
+  $("oppName").textContent = o.name;
+  $("oppTag").textContent = o.tagline;
+  const grid = $("oppGrid");
+  grid.innerHTML = "";
+  Rules.POSITIONS.forEach((p) => {
+    const c = byId(o.team[p]);
+    const cell = document.createElement("div");
+    cell.style.gridRow = Rules.lane("cpu", p) + 1;
+    cell.style.gridColumn = Rules.isFront(p) ? 1 : 2;
+    cell.className = "bcell filled opp-cell";
+    const src = spriteSrc(c.looks[o.looks[p] || 0] || c.looks[0]);
+    const flip = (c.faces || "left") === "right" ? ' style="transform:scaleX(-1)"' : "";
+    cell.innerHTML = `<span class="pos-num">${p}</span><img src="${src}" alt=""${flip}><div class="cname">${rankHTML(c)} ${c.name}</div>`;
+    attachTooltip(cell, () => c);
+    grid.appendChild(cell);
+  });
+  const skill = o.smart >= 0.8 ? "Expert" : o.smart >= 0.5 ? "Skilled" : o.smart >= 0.25 ? "Average" : "Beginner";
+  $("oppInfo").innerHTML = `Ultimate: <b>${CONFIG.ultimates[o.ult].name}</b> · CPU skill: <b>${skill}</b>`;
+}
+
 function renderBuilder() {
   renderUltPick();
+  renderOpponent();
+  const path = builder.mode === "path";
+  $("builderTitle").textContent = path ? `Checkpoint ${builder.stage + 1}: ${STAGES[builder.stage].name}` : "Free Play";
+  $("diffLabel").classList.toggle("hidden", path);
+  $("oppReroll").classList.toggle("hidden", path);
+  $("startMatch").textContent = path ? "Challenge!" : "Start match";
   const count = Rules.POSITIONS.filter((p) => builder.slots[p]).length;
   renderRoster();
   renderBuilderGrid();
@@ -209,7 +256,8 @@ $("randomTeam").addEventListener("click", () => {
   builder.selected = null;
   renderBuilder();
 });
-$("difficulty").addEventListener("change", saveTeam);
+$("difficulty").addEventListener("change", () => { saveTeam(); setupOpponent(); renderBuilder(); });
+$("oppReroll").addEventListener("click", () => { setupOpponent(); Sound.play("click"); renderBuilder(); });
 $("startMatch").addEventListener("click", startMatch);
 renderBuilder();
 
@@ -256,7 +304,9 @@ const elOf = new Map(); // creature instance -> its element on court
 
 function startMatch() {
   const diff = $("difficulty").value;
-  const d = CONFIG.difficulty[diff];
+  const o = builder.opp;
+  const cpuAt = {};
+  Rules.POSITIONS.forEach((p) => { cpuAt[p] = Rules.makeInstance(byId(o.team[p]), o.looks[p] || 0); });
   const at = {};
   Rules.POSITIONS.forEach((p) => {
     const base = byId(builder.slots[p]);
@@ -264,9 +314,9 @@ function startMatch() {
   });
   matchToken++;
   M = {
-    diff, smart: d.smart, timingSkill: d.timing,
+    diff, smart: o.smart, timingSkill: o.timing, mode: builder.mode, stage: builder.stage,
     player: Rules.makeTeam("player", at, 1, builder.ult),
-    cpu: Rules.makeTeam("cpu", AI.buildTeam(CREATURES, d.team), 1, Object.keys(CONFIG.ultimates)[Math.floor(Math.random() * 3)]),
+    cpu: Rules.makeTeam("cpu", cpuAt, 1, o.ult),
     score: { player: 0, cpu: 0 },
     serving: Math.random() < 0.5 ? "player" : "cpu",
     pending: null, armed: null, freeOn: false, ultArmed: false,
@@ -1088,8 +1138,24 @@ function runTiming(ctrl) {
 }
 
 // ---------- match flow ----------
+async function intro() {
+  const el = $("intro");
+  el.classList.remove("hidden");
+  el.className = "intro";
+  el.textContent = "READY…";
+  Sound.play("click");
+  await wait(1000);
+  el.textContent = "BEGIN!";
+  el.className = "intro go";
+  Sound.play("whistle");
+  ["player", "cpu"].forEach((side) => Rules.POSITIONS.forEach((p) => anim(teamOf(side).at[p], "jump")));
+  await wait(900);
+  el.classList.add("hidden");
+}
+
 async function matchLoop(token) {
   try {
+    await intro();
     while (true) {
       const { winner, reason } = await playRally();
       checkAlive(token);
@@ -1115,6 +1181,10 @@ async function matchLoop(token) {
       await showBanner(winner === "player" ? "POINT!" : "CPU POINT", reason + (sideOut && !over ? " · Side out, rotate!" : ""), winner !== "player");
       if (over) {
         if (a > b) Sound.play("win");
+        if (M.mode === "path") { showPathEnd(a > b); return; }
+        $("playAgain").textContent = "Back to team select";
+        $("endSecond").textContent = "Main menu";
+        endAction = { first: backToBuilder, second: () => { backToBuilder(); showScreen("menu"); } };
         $("endTitle").textContent = a > b ? "You win! 🏐" : "CPU wins!";
         $("endScore").textContent = `Final score: ${a} – ${b}`;
         $("endOverlay").classList.remove("hidden");
@@ -1516,11 +1586,26 @@ function backToBuilder() {
   if (M && M.pending) { const p = M.pending; M.pending = null; p.resolve({ type: "abort" }); }
   if (M && M.cancelServe) M.cancelServe();
   M = null;
-  ["timing", "banner", "servePick", "endOverlay", "match", "ultBtn", "blockAlert"].forEach((id) => $(id).classList.add("hidden"));
+  ["timing", "banner", "servePick", "endOverlay", "match", "ultBtn", "blockAlert", "intro"].forEach((id) => $(id).classList.add("hidden"));
   $("builder").classList.remove("hidden");
   tip.classList.add("hidden");
   renderBuilder();
 }
 window.addEventListener("resize", () => { if (M) { $("court").style.setProperty("--px", fxScale() + "px"); updateFlames(); } });
+let endAction = { first: () => backToBuilder(), second: () => { backToBuilder(); showScreen("menu"); } };
+function showPathEnd(won) {
+  const st = STAGES[M.stage];
+  if (won) Progress.beat(M.stage);
+  const last = M.stage === STAGES.length - 1;
+  $("endTitle").textContent = won ? (last ? "You conquered the Path! 🏆" : "Checkpoint cleared!") : "Defeated…";
+  $("endScore").textContent = `${st.name}: ${M.score.player} – ${M.score.cpu}` + (won && !last ? " · Next checkpoint unlocked!" : "");
+  $("playAgain").textContent = won ? "Back to the Path" : "Try again";
+  $("endSecond").textContent = won ? "Main menu" : "Back to the Path";
+  endAction = won
+    ? { first: () => { backToBuilder(); showScreen("path"); }, second: () => { backToBuilder(); showScreen("menu"); } }
+    : { first: () => backToBuilder(), second: () => { backToBuilder(); showScreen("path"); } };
+  $("endOverlay").classList.remove("hidden");
+}
 $("quitMatch").addEventListener("click", backToBuilder);
-$("playAgain").addEventListener("click", backToBuilder);
+$("playAgain").addEventListener("click", () => endAction.first());
+$("endSecond").addEventListener("click", () => endAction.second());

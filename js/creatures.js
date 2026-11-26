@@ -57,8 +57,8 @@ const CREATURES = [
     active: { id: "hornWall", name: "Horn Wall", text: "For this rally, its block chance is huge (front row only)." },
   },
   {
-    id: "ripplet", name: "Ripplet", looks: ["assets/creatures/ripplet.png"],
-    classes: ["setter", "receiver"],
+    id: "ripplet", name: "Ripplet", looks: ["assets/creatures/ripplet.png"], faces: "right",
+    classes: ["setter"],
     rank: "C",
     str: 48, ctrl: 81, def: 57, per: 62,
     passive: { id: "flowingSets", name: "Flowing Sets", text: "Sets better from the back row instead of worse." },
@@ -90,7 +90,7 @@ const CREATURES = [
   },
   {
     id: "toxipine", name: "Toxipine", looks: ["assets/creatures/toxipine.png"],
-    classes: ["spiker", "receiver"],
+    classes: ["spiker"],
     rank: "D",
     str: 57, ctrl: 51, def: 64, per: 49,
     passive: { id: "prickly", name: "Prickly", text: "Any spiker whose spike Toxipine digs gets Poisoned." },
@@ -161,7 +161,7 @@ const CREATURES = [
     active: { id: "magmaSpit", name: "Magma Spit", text: "A scorching spike: whoever it's aimed at is Burned for this rally and the next two." },
   },
   {
-    id: "frillet", name: "Frillet", looks: ["assets/creatures/frillet.png"], faces: "right",
+    id: "frillet", name: "Frillet", looks: ["assets/creatures/frillet.png"],
     rank: "D",
     classes: ["receiver"],
     str: 45, ctrl: 55, def: 61, per: 59,
