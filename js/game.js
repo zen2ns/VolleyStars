@@ -201,7 +201,7 @@ function renderBuilderGrid() {
       } else if (id) {
         builder.slots[p] = null;
       } else {
-        $("builderMsg").textContent = "Pick a creature from the list first.";
+        $("builderMsg").textContent = "Pick a Star from the list first.";
         return;
       }
       renderBuilder();

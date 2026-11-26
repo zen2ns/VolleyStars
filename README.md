@@ -1,6 +1,6 @@
 # VolleyStars
 
-A turn-based creature volleyball game that runs in the browser.
+A turn-based volleyball game starring collectible creatures called **Stars**, running in the browser.
 
 ## Files
 - `index.html`: the page
