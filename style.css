@@ -226,14 +226,16 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .crt.winded .tag { opacity: 0.7; font-style: italic; }
 
 .abil-btn {
-  position: absolute; top: calc(100% + 1.45em); left: 50%; transform: translateX(-50%); z-index: 9; white-space: nowrap;
+  position: absolute; transform: translate(-100%, -50%); white-space: nowrap; pointer-events: auto;
   font: inherit; font-size: clamp(0.55rem, 1.1vw, 0.8rem); font-weight: bold; cursor: pointer;
   background: linear-gradient(#8b45d6, #5a2a8a); color: #fff; border: 2px solid #e6c8ff; border-radius: 999px;
   padding: 2px 10px; box-shadow: 0 0 12px #b14dff; animation: abilPulse 1.2s ease-in-out infinite;
 }
 .abil-btn:hover { filter: brightness(1.2); }
 .abil-btn.armed { background: linear-gradient(#ffe066, #ffb020); color: #2a1600; border-color: #fff; box-shadow: 0 0 16px #ffcc33; animation: none; }
-@keyframes abilPulse { 50% { box-shadow: 0 0 20px #d7a8ff; transform: translateX(-50%) translateY(-3px); } }
+@keyframes abilPulse { 50% { box-shadow: 0 0 20px #d7a8ff; transform: translate(-100%, -50%) scale(1.06); } }
+.abil-layer { position: absolute; inset: 0; z-index: 11; pointer-events: none; }
+.abil-btn.right-side { transform: translate(0, -50%); animation: none; }
 
 /* ---------- ball, pixel flame ring, particles ---------- */
 .ball { position: absolute; width: 4%; transform: translate(-50%, -50%); z-index: 9; pointer-events: none; }

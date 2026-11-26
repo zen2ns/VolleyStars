@@ -904,8 +904,15 @@ function renderAbilityButtons() {
     btn.textContent = armed ? `${c.active.name} ✓` : c.active.name;
     btn.title = c.active.text;
     btn.addEventListener("click", (e) => { e.stopPropagation(); onAbilityClick(c); });
-    btn.addEventListener("mouseenter", (e) => e.stopPropagation());
-    elOf.get(c).appendChild(btn);
+    // sits beside the creature (on the side away from the net), on a layer above every creature
+    const f = feet("player", pos);
+    if (ctx.serve && pos === 1) {
+      // the server is standing behind the line: put its button on the court side instead
+      btn.classList.add("right-side");
+      btn.style.left = XS.player.serve + (7.5 * sizeOf(c)) * 0.38 + "%";
+    } else btn.style.left = f.x - (7.5 * sizeOf(c)) * 0.38 + "%";
+    btn.style.top = f.y - headH("player", pos) * 0.6 + "%";
+    $("abilLayer").appendChild(btn);
   });
 }
 
