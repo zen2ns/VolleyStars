@@ -247,9 +247,9 @@ function startMatch() {
   });
   matchToken++;
   M = {
-    diff, smart: d.smart,
+    diff, smart: d.smart, timingSkill: d.timing,
     player: Rules.makeTeam("player", at, 1, builder.ult),
-    cpu: Rules.makeTeam("cpu", AI.buildTeam(CREATURES), d.statMult, Object.keys(CONFIG.ultimates)[Math.floor(Math.random() * 3)]),
+    cpu: Rules.makeTeam("cpu", AI.buildTeam(CREATURES), 1, Object.keys(CONFIG.ultimates)[Math.floor(Math.random() * 3)]),
     score: { player: 0, cpu: 0 },
     serving: Math.random() < 0.5 ? "player" : "cpu",
     pending: null, armed: null, freeOn: false, ultArmed: false,
@@ -281,7 +281,7 @@ function buildCourt() {
       // face the net: player team looks right, CPU team looks left
       const facesLeft = (c.faces || "left") === "left";
       el.className = `crt ${side}` + ((side === "player") === facesLeft ? " flip" : "");
-      el.innerHTML = `<div class="shadow"></div><div class="jumper"><div class="bob"><img src="${spriteSrc(c.img)}" alt="${c.name}"></div></div><div class="tag">${c.name}</div>`;
+      el.innerHTML = `<div class="badge-fx"></div><div class="shadow"></div><div class="jumper"><div class="bob"><img src="${spriteSrc(c.img)}" alt="${c.name}"></div></div><div class="tag">${c.name}</div>`;
       const bob = el.querySelector(".bob");
       bob.style.animationDuration = (2 + Math.random() * 1.2).toFixed(2) + "s";
       bob.style.animationDelay = (-Math.random() * 3).toFixed(2) + "s";
@@ -324,12 +324,35 @@ function updateStatus() {
       el.classList.toggle("roots", c.active.id === "deepRoots" && !!T.buffs.deepRoots);
       el.classList.toggle("stampede", !!T.buffs.stampede);
       el.classList.toggle("poisoned", c.poison > 0);
+      // a little pixel flame over the head shows buffs and poison (green glow only ever means "pass here")
+      const buffOn = (["deepRoots", "cactusCover", "leapBlock", "hornWall"].includes(c.active.id) && !!T.buffs[c.active.id]);
+      const badge = c.poison > 0 ? "flame_toxic" : buffOn ? (c.active.id === "hornWall" ? "flame_gold" : "flame_seed") : null;
+      setBadge(el, badge);
       el.classList.toggle("recovering", !!c.recovering);
       el.classList.toggle("fortress", !!T.buffs.fortress && Rules.isFront(p));
       el.classList.toggle("roots", (c.active.id === "deepRoots" && !!T.buffs.deepRoots) || (c.active.id === "cactusCover" && !!T.buffs.cactusCover));
     });
   });
 }
+
+// tiny looping pixel flames used as status badges
+const badgeEls = new Set();
+function setBadge(el, name) {
+  const b = el.querySelector(".badge-fx");
+  if (!name) { b.style.display = "none"; badgeEls.delete(b); return; }
+  const S = fxScale(), w = 14 * S, h = 20 * S;
+  b.style.display = "block";
+  b.style.width = w + "px"; b.style.height = h + "px";
+  b.style.backgroundImage = `url(assets/fx/${name}.png)`;
+  b.style.backgroundSize = `${6 * w}px ${h}px`;
+  b._w = w;
+  badgeEls.add(b);
+}
+let badgeFrame = 0;
+setInterval(() => {
+  badgeFrame = (badgeFrame + 1) % 6;
+  badgeEls.forEach((b) => { b.style.backgroundPosition = `${-badgeFrame * b._w}px 0`; });
+}, 100);
 
 function updateScore() {
   $("scorePlayer").textContent = M.score.player;
@@ -547,7 +570,7 @@ function courtShake(size) {
 }
 
 // Fly the ball from where it is to `to` in an arc. arc = peak height in % of court height.
-function flyBall(to, ms, arc) {
+function flyBall(to, ms, arc, { wobble = 0, trail = null } = {}) {
   const token = matchToken;
   const from = { ...M.ball };
   return new Promise((resolve, reject) => {
@@ -556,11 +579,12 @@ function flyBall(to, ms, arc) {
     function step(now) {
       if (token !== matchToken) return reject(new Abort());
       const t = Math.min(1, (now - start) / ms);
-      const x = from.x + (to.x - from.x) * t;
-      const y = from.y + (to.y - from.y) * t - Math.sin(Math.PI * t) * arc;
+      const x = from.x + (to.x - from.x) * t + Math.sin(t * Math.PI * 5) * wobble * (1 - t);
+      const y = from.y + (to.y - from.y) * t - Math.sin(Math.PI * t) * arc + Math.cos(t * Math.PI * 4) * wobble * 0.6 * Math.sin(Math.PI * t);
       const gy = from.gy + (to.gy - from.gy) * t;
       setBall({ x, y, gy });
       const kinds = [...M.fx];
+      if (trail) kinds.push(trail);
       if (M.poss && levelFor(M.poss) >= 2) kinds.push("ember");
       if (kinds.length && frame % 2 === 0) particle(x, y, kinds[(frame / 2) % kinds.length]);
       frame++;
@@ -854,7 +878,7 @@ function refreshControls() {
   renderAbilityButtons();
   renderUltButton();
   $("freeToggle").classList.add("hidden");
-  $("noBlock").classList.add("hidden");
+  $("blockAlert").classList.add("hidden");
   if (!p) return;
   if (M.armed) elOf.get(M.armed.c).classList.add("armed");
 
@@ -862,7 +886,7 @@ function refreshControls() {
     // "Read the spike": pick one front-row blocker, or no block
     setStep("player", 0, "block");
     Rules.FRONT.forEach((bp) => elOf.get(M.player.at[bp]).classList.add("pick-block"));
-    $("noBlock").classList.remove("hidden");
+    $("blockAlert").classList.remove("hidden");
     return;
   }
 
@@ -1103,7 +1127,7 @@ async function playRally() {
   } else {
     await wait(700);
     serveType = AI.serveType(M.smart);
-    timing = AI.timing(M.smart);
+    timing = AI.timing(M.timingSkill);
     target = AI.easyTarget(M.player, M.smart, Rules.servePowerEstimate(off, serveType), Rules.serveTargets(serveType));
   }
   // toss and hit
@@ -1226,6 +1250,7 @@ async function playRally() {
         if (!O.buffs.fortress) {
           setStep("cpu", touch, "spike");
           await wait(350);
+          Sound.play("alert");
           const choice = await askPlayer({ blockChoice: true, holderPos: null });
           checkAlive(token);
           if (!O.buffs.fortress) O.blockerPos = choice.target;
@@ -1255,6 +1280,7 @@ async function playRally() {
       setStep("cpu", touch, canSpike ? "spike" : touch === 3 ? "free" : touch === 1 ? "bump" : "set");
       await wait(600);
       action = AI.decide(T, O, holder, touch, isSet, q, levelFor(side), M.smart);
+      if (action.type === "spike") action.timing = AI.timing(M.timingSkill);
       if (action.type === "sneaky") setStep("cpu", touch, "sneaky");
       if (action.type === "free" && canSpike && O.buffs.fortress) popAt(73, 8, "Too scared to spike!", "passive");
       if (action.type === "spike" && Rules.ultReady(T) && T.ult === "nuclear") action.ult = true;
@@ -1287,7 +1313,15 @@ async function playRally() {
       if (action.special === "lanternSet") swing(side, 2, holder);
       swing(side, Rules.comboGain(asSet ? "set" : "pass", p.quality), holder, p.quality >= 80 && !action.special ? (asSet ? "Perfect set!" : "Perfect pass!") : null);
       log(`${who(side, hc)} ${asSet ? "sets" : "bumps"} to ${mate.name}.`);
-      await flyBall(headPt(side, action.target), asSet ? 650 : 600, asSet ? 24 : 18);
+      if (asSet && Rules.has(hc, "setter")) {
+        // a real setter: clean, high, golden arc
+        await flyBall(headPt(side, action.target), 720, 32, { trail: "spark" });
+      } else if (asSet) {
+        // anyone else setting: low and wobbly
+        await flyBall(headPt(side, action.target), 680, 13, { wobble: 2.6 });
+      } else {
+        await flyBall(headPt(side, action.target), 600, 18);
+      }
       incoming = { fromOpp: false, side, pos: action.target, quality: p.quality, touch: touch + 1, isSet: asSet };
       continue;
     }
@@ -1307,7 +1341,17 @@ async function playRally() {
         ultFx(side, "nuclear");
         setBallFx([...M.fx, "fire"]);
       }
-      if (O.blockerPos) anim(O.at[O.blockerPos], "jump");
+      if (O.blockerPos) {
+        const bc = O.at[O.blockerPos];
+        const tLane = Rules.lane(other(side), action.target);
+        // Leaping Block: Drylion springs sideways toward the row the ball is going to
+        if (bc.active.id === "leapBlock" && O.buffs.leapBlock && Rules.lane(other(side), O.blockerPos) !== tLane) {
+          const bel = elOf.get(bc);
+          bel.style.top = LANE_Y[tLane] + "%";
+          pop(other(side), O.blockerPos, "Leap!", "passive");
+          setTimeout(() => { if (M) placeAll(); }, 900);
+        }
+      }
       if (O.buffs.fortress) Rules.FRONT.forEach((bp) => anim(O.at[bp], "jump"));
       Sound.play("spike");
       await wait(180);
@@ -1317,10 +1361,6 @@ async function playRally() {
       T.nuke = false;
       Rules.clearRecovering(T); // the attackers' own blocker is back in position
       elOf.forEach((el) => el.classList.remove("blocking"));
-      // a blocker who got beaten is still landing: out of the next possession
-      if (!res.out && !res.blocked && O.blockerPos && !O.buffs.fortress) {
-        O.at[O.blockerPos].recovering = true;
-      }
       O.blockerPos = null;
       popPassives(side, holder, res.passives);
       updateStatus();
@@ -1336,6 +1376,8 @@ async function playRally() {
       if (res.blocked) {
         const blocker = O.at[res.blockerPos];
         const bp = headPt(other(side), res.blockerPos);
+        const leapt = Rules.lane(other(side), res.blockerPos) !== Rules.lane(other(side), action.target) && blocker.active.id === "leapBlock";
+        if (leapt) { bp.y = LANE_Y[Rules.lane(other(side), action.target)] - HEAD; }
         anim(blocker, "jump");
         await flyBall({ x: side === "player" ? 48 : 52, y: bp.y - 4, gy: bp.gy }, 260, 2);
         pop(other(side), res.blockerPos, "BLOCKED!", "big");
@@ -1415,7 +1457,7 @@ function backToBuilder() {
   if (M && M.pending) { const p = M.pending; M.pending = null; p.resolve({ type: "abort" }); }
   if (M && M.cancelServe) M.cancelServe();
   M = null;
-  ["timing", "banner", "servePick", "endOverlay", "match", "ultBtn", "noBlock"].forEach((id) => $(id).classList.add("hidden"));
+  ["timing", "banner", "servePick", "endOverlay", "match", "ultBtn", "blockAlert"].forEach((id) => $(id).classList.add("hidden"));
   $("builder").classList.remove("hidden");
   tip.classList.add("hidden");
   renderBuilder();

@@ -22,10 +22,13 @@ const CONFIG = {
   comboPowerPerLevel: 0.07,
   adaptPerLevel: 0.08,      // "Adapting": each recent spike at a creature makes it dig this much better
 
-  // Blocking: the defending team picks ONE front-row blocker (or none) before each spike
-  chosenBlockMult: 1.6,     // the chosen blocker's block chance multiplier
-  noBlockDigBonus: 1.1,     // "No block": everyone stays back and digs better
-  recoverCoverMult: 0.85,   // a ball hit at a recovering blocker must be dug by a diving teammate
+  // Blocking: the defending team picks ONE front-row blocker (or none) before each spike.
+  // A blocker guards its whole row: spikes aimed into that row are very likely blocked.
+  blockBase: 0.42,          // head-on block chance for an average blocker vs an average spike
+  blockNeighborRow: 0.15,   // how much of that chance carries to the row next door
+  leapRow: 0.55,            // Drylion's Leaping Block: share of the chance it keeps on other rows
+  noBlockDigBonus: 1.15,    // "No block": everyone stays back and digs better
+  recoverCoverMult: 0.85,
 
   // Ultimates: good plays (momentum you gain) charge your meter; it stays between rallies
   ultMax: 11,
@@ -50,11 +53,13 @@ const CONFIG = {
     miss:    { power: 0.7,  out: 0.25, serveOut: 0.6,  combo: 0, label: "Whiffed!" },
   },
 
-  // CPU difficulty: stat multiplier and how smart its choices are (0-1)
+  // CPU difficulty only changes how WELL the CPU plays, never the rules or its stats:
+  //   smart  = how good its choices are (targets, passes, blocks, abilities), 0-1
+  //   timing = how well it hits its spike/serve timing bar, 0-1
   difficulty: {
-    easy:   { statMult: 0.85, smart: 0.25 },
-    normal: { statMult: 0.94, smart: 0.5 },
-    hard:   { statMult: 1.0,  smart: 0.9 },
+    easy:   { smart: 0.1,  timing: 0.05 },
+    normal: { smart: 0.3,  timing: 0.25 },
+    hard:   { smart: 0.85, timing: 0.78 },
   },
 };
 
@@ -145,10 +150,11 @@ Rules.abilityReady = (team, pos, ctx) => {
     case "deepRoots":    return !team.buffs.deepRoots;
     case "stampede":     return !team.buffs.stampede;
     case "cactusCover":  return !team.buffs.cactusCover;
+    case "leapBlock":    return Rules.isFront(pos) && !team.buffs.leapBlock;
   }
   return false;
 };
-Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede", "cactusCover"];
+Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede", "cactusCover", "leapBlock"];
 
 // Cactus Cover: a spike aimed at a teammate next to Desacti gets dug by Desacti instead
 Rules.coverPos = (team, pos, kind) => {
@@ -310,36 +316,33 @@ Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
   return power;
 };
 
-// Block chance for each defending front-row creature, based on the ball's path.
-// Line shot: the blocker straight ahead matters most. Cross shot: less, but the
-// blocker in the target's lane gets a chance too.
+// Block chance for each blocking creature. A blocker guards its whole ROW (lane):
+// spiking straight into that row (at the blocker or the receiver behind it) is very
+// likely to get blocked; the next row over has a small chance; the far row none.
 Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
   if (atk.buffs.spooked) return []; // Jack-o'-Lantern Set: nobody dares to block
   const fortress = !!def.buffs.fortress;
   if (!fortress && !def.blockerPos) return []; // "No block"
   const spiker = atk.at[fromPos];
-  const a = Rules.aim(atk.side, fromPos, def.side, targetPos);
+  const tLane = Rules.lane(def.side, targetPos);
   const out = [];
   Rules.FRONT.forEach((bp) => {
     if (!fortress && bp !== def.blockerPos) return; // only the chosen blocker jumps
     const b = def.at[bp];
-    const bl = Rules.lane(def.side, bp);
-    let weight = 0;
-    if (bl === a.sLane) weight = a.line ? 1 : 0.55;
-    else if (!a.line && bl === a.tLane) weight = 0.35;
-    else if (a.line && Math.abs(bl - a.sLane) === 1) weight = 0.2;
+    const gap = Math.abs(Rules.lane(def.side, bp) - tLane);
+    const leap = gap > 0 && b.active.id === "leapBlock" && !!def.buffs.leapBlock;
+    const weight = gap === 0 ? 1 : leap ? CONFIG.leapRow : gap === 1 ? CONFIG.blockNeighborRow : 0;
     if (!weight) return;
     const blockSkill = (Rules.eff(def, b, "str") + Rules.eff(def, b, "per")) / 2;
-    let chance = Rules.clamp(0.13 + (blockSkill - power * 0.85) * 0.005, 0.03, 0.32);
-    if (b.passive.id === "ironShell") chance *= 1.35;
-    if (b.active.id === "hornWall" && def.buffs.hornWall) chance = Math.min(0.75, chance * 2.5);
+    let chance = Rules.clamp(CONFIG.blockBase + (blockSkill - power * 0.85) * 0.006, 0.22, 0.65);
+    if (b.passive.id === "ironShell") chance *= 1.2;
+    if (b.active.id === "hornWall" && def.buffs.hornWall) chance *= 1.35;
     if (spiker.passive.id === "menacing") chance *= 0.65;
-    if (!Rules.isFront(fromPos)) chance *= 0.7;
-    chance *= a.deep ? 0.65 : 1.4; // hitting short into the front row runs into blockers
-    chance *= CONFIG.chosenBlockMult;
-    if (fortress) { weight = Math.max(weight, 0.7); chance = Math.max(chance * 2.5, 0.45); }
+    if (!Rules.isFront(fromPos)) chance *= 0.8;
+    chance *= Rules.isFront(targetPos) ? 1.1 : 0.9;
+    if (fortress) chance = Math.max(chance * 1.25, 0.55);
     if (atk.nuke) chance *= 0.5;
-    out.push({ pos: bp, chance: Math.min(fortress ? 0.85 : 0.8, chance * weight) });
+    out.push({ pos: bp, chance: Math.min(fortress ? 0.85 : 0.8, chance * weight), leap });
   });
   return out;
 };
@@ -440,27 +443,30 @@ AI.spikeTarget = (atk, fromPos, inQ, def, smart, combo, special) => {
   return best;
 };
 
-AI.timing = (smart) => {
+// How the CPU does on the timing bar. skill 0 = often mistimes, 1 = mostly perfect.
+AI.timing = (skill) => {
   const r = Math.random();
-  if (r < 0.06 + 0.2 * smart) return "perfect";
-  if (r < 0.3 + 0.35 * smart) return "good";
-  if (r < 0.82) return "ok";
-  return r < 0.96 ? "poor" : "miss";
+  if (r < 0.03 + 0.3 * skill) return "perfect";
+  if (r < 0.2 + 0.45 * skill) return "good";
+  if (r < 0.72 + 0.18 * skill) return "ok";
+  return r < 0.93 + 0.05 * skill ? "poor" : "miss";
 };
 
-// Pick a blocker before the other team spikes (or null = no block, everyone digs)
+// Pick a blocker before the other team spikes (or null = no block, everyone digs).
+// The blocker guards its row, so the CPU protects the row with its shakiest digger.
 AI.chooseBlocker = (def, atk, spikerPos, smart) => {
   if (def.buffs.fortress) return null;
-  const sLane = Rules.lane(atk.side, spikerPos);
   if (Math.random() > smart) return Math.random() < 0.3 ? null : Rules.FRONT[Math.floor(Math.random() * 3)];
-  let best = null, bestScore = 52; // below this, staying back to dig is better
+  const power = atk.at[spikerPos].str * 0.9;
+  let best = null, bestScore = 0.22; // if every row digs this well, stay back instead
   Rules.FRONT.forEach((bp) => {
+    const lane = Rules.lane(def.side, bp);
+    const rowRisk = Math.max(...Rules.POSITIONS.filter((p) => Rules.lane(def.side, p) === lane)
+      .map((p) => Rules.shankChance(def, p, power, "spike")));
     const b = def.at[bp];
-    const gap = Math.abs(Rules.lane(def.side, bp) - sLane);
-    let sc = (b.str + b.per) / 2 * (gap === 0 ? 1 : gap === 1 ? 0.75 : 0.4);
-    if (b.passive.id === "ironShell") sc *= 1.25;
-    if (b.active.id === "hornWall" && def.buffs.hornWall) sc *= 1.6;
-    if (Rules.has(b, "spiker")) sc *= 0.92; // blocking with a spiker costs your counterattack
+    let sc = rowRisk * (0.7 + (b.str + b.per) / 300);
+    if (b.passive.id === "ironShell" || (b.active.id === "hornWall" && def.buffs.hornWall)) sc *= 1.2;
+    if (b.active.id === "leapBlock" && def.buffs.leapBlock) sc *= 1.5;
     if (sc > bestScore) { bestScore = sc; best = bp; }
   });
   return best;
@@ -486,6 +492,7 @@ AI.preRally = (team, receivingServe, smart) => {
     if (id === "stampede" && receivingServe && Math.random() < smart * 0.6) used.push(p);
     if (id === "deepRoots" && Math.random() < smart * 0.5) used.push(p);
     if (id === "cactusCover" && !receivingServe && Math.random() < smart * 0.6) used.push(p);
+    if (id === "leapBlock" && Math.random() < smart * 0.6) used.push(p);
   });
   used.forEach((p) => Rules.useAbility(team, p));
   return used;

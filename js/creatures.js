@@ -54,7 +54,7 @@ const CREATURES = [
     classes: ["receiver"],
     str: 45, ctrl: 65, def: 85, per: 78,
     passive: { id: "rooted", name: "Rooted", text: "Digs spikes even better from the back row." },
-    active: { id: "deepRoots", name: "Deep Roots", text: "Its next dig this rally is automatically perfect." },
+    active: { id: "leapBlock", name: "Leaping Block", text: "For this rally, when Drylion blocks from the front row it can leap sideways to block spikes aimed at the other rows (a bit less likely than head-on)." },
   },
   {
     id: "felimelon", name: "Felimelon", looks: ["assets/creatures/felimelon.png"],

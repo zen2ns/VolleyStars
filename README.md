@@ -26,8 +26,9 @@ A turn-based creature volleyball game that runs in the browser.
    A faded creature is winded (spiked recently and hits weaker).
 
 ## Blocking, ultimates, sound
-- When the other team's spiker gets a set, pick ONE front-row blocker (or "No block" = everyone digs better).
-  A blocker who gets beaten is **recovering** (see-through) and can't play your next possession.
+- When the other team's spiker gets a set, a flashing BLOCK! banner appears: pick ONE front-row blocker, or
+  "No block" (everyone digs better). A blocker guards its whole row: spiking straight into it gets blocked a lot.
+- CPU difficulty only changes how well the CPU plays (choices + timing), never its stats or the rules.
 - Pick a team ultimate on the team screen: **Nuclear Spike**, **Combo Star** or **Iron Fortress**.
   Good plays fill the meter under your score; when it's full, the ultimate button appears at the top.
 - SFX / MUSIC buttons at the top turn sound on and off (all sounds are made in `js/sound.js`, no audio files).

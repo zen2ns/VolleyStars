@@ -98,6 +98,7 @@ const Sound = (() => {
     spook: () => { tone(300, 0.4, { type: "triangle", slideTo: 180, vol: 0.15 }); tone(310, 0.4, { type: "triangle", slideTo: 190, vol: 0.1 }); },
     shield: () => { tone(440, 0.2, { type: "triangle", vol: 0.15 }); tone(660, 0.25, { type: "triangle", vol: 0.12, delay: 0.05 }); },
     win: () => arp([523, 659, 784, 1047, 784, 1047], 0.11, { vol: 0.18 }),
+    alert: () => { tone(880, 0.09, { vol: 0.14 }); tone(1175, 0.12, { vol: 0.14, delay: 0.1 }); },
   };
   function play(name) {
     if (!ctx || !sfxOn || !SFX[name]) return;
