@@ -374,7 +374,8 @@ Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
     const wall = b.active.id === "greatWall" && !!def.buffs.greatWall; // guards every row head-on
     const weight = gap === 0 || wall ? 1 : leap ? CONFIG.leapRow : gap === 1 ? CONFIG.blockNeighborRow : 0;
     if (!weight) return;
-    const blockSkill = (Rules.eff(def, b, "str") + Rules.eff(def, b, "per")) / 2;
+    // blocking: Defense matters most, then Perception (reading the hitter), a little Strength
+    const blockSkill = Rules.eff(def, b, "def") * 0.5 + Rules.eff(def, b, "per") * 0.35 + Rules.eff(def, b, "str") * 0.15;
     let chance = Rules.clamp(CONFIG.blockBase + (blockSkill - power * 0.85) * 0.006, 0.22, 0.65);
     if (b.passive.id === "ironShell") chance *= 1.2;
     if (b.passive.id === "fortified") chance *= 1.4;
@@ -509,7 +510,7 @@ AI.chooseBlocker = (def, atk, spikerPos, smart) => {
     const rowRisk = Math.max(...Rules.POSITIONS.filter((p) => Rules.lane(def.side, p) === lane)
       .map((p) => Rules.shankChance(def, p, power, "spike")));
     const b = def.at[bp];
-    let sc = rowRisk * (0.7 + (b.str + b.per) / 300);
+    let sc = rowRisk * (0.7 + (b.def * 0.5 + b.per * 0.35 + b.str * 0.15) / 150);
     if (b.passive.id === "ironShell" || (b.active.id === "hornWall" && def.buffs.hornWall)) sc *= 1.2;
     if (b.active.id === "leapBlock" && def.buffs.leapBlock) sc *= 1.5;
     if (b.active.id === "greatWall" && def.buffs.greatWall) sc *= 3;
