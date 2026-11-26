@@ -936,6 +936,7 @@ function groundPt(side, pos) {
 }
 // The spike's flight, decided once we know whether it gets dug
 async function landSpike(side, pos, fl, missed) {
+  raiseBlock();
   const dest = missed ? groundPt(side, pos) : headPt(side, pos);
   if (fl.epic) {
     const from = { ...M.ball };
@@ -946,11 +947,23 @@ async function landSpike(side, pos, fl, missed) {
   spikeImpact(missed ? { x: dest.x, y: dest.y - 8, gy: dest.gy } : dest, fl.power, fl.lvl, fl.nuke);
   if (missed) { playSprite("puff_dust", dest.x, dest.y, { anchor: "bottom" }); courtShake(fl.power >= CONFIG.bounceSpikePower ? "m" : "s"); }
   if (fl.after) fl.after();
+  releaseBlock();
   if (!missed && fl.epic) await wait(160); // a beat of hit-stop on a big dig
 }
 // After smashing into the floor the ball keeps going: front row pops up high,
 // back row skims low and fast off the back of the court. Harder spikes go farther.
-async function ballBounce(side, pos, power) {
+// Blockers jump as the ball is hit and stay up until it's well past them
+function raiseBlock() { (M.blockEls || []).forEach((el) => el && el.classList.add("blockup")); }
+function releaseBlock() {
+  const els = M.blockEls || [];
+  const leap = M.blockLeap;
+  M.blockEls = []; M.blockLeap = false;
+  setTimeout(() => {
+    els.forEach((el) => el && el.classList.remove("blockup", "blocking"));
+    if (leap && M) placeAll();
+  }, CONFIG.blockHoldMs);
+}
+async function ballBounce(side, pos, power, far = false) {
   const f = feet(side, pos);
   const dir = side === "player" ? -1 : 1; // away from the net
   const k = Rules.clamp((power - 40) / 80, 0.35, 1.4); // bounce strength
@@ -960,12 +973,12 @@ async function ballBounce(side, pos, power) {
     await flyBall({ x, y, gy: y }, ms, arc);
     if (mark && x > 0 && x < 100) ripple(x, y, "#ffffff", mark);
   };
-  if (Rules.isFront(pos)) {
+  if (Rules.isFront(pos) && !far) {
     await hop(9 * k, 2, 420, 18 * k, 8);
     Sound.play("bump");
     await hop(6 * k, 1, 300, 7 * k, 5);
     await hop(3 * k, 0, 200, 2, 0);
-  } else if (k < 0.75) {
+  } else if (k < 0.75 && !far) {
     // a soft spike just skips back and rolls to a stop
     await hop(10 * k, 1, 260, 5 * k, 6);
     await hop(5 * k, 1, 220, 1.5, 0);
@@ -1719,10 +1732,11 @@ async function playRally() {
           const bel = elOf.get(bc);
           bel.style.top = LANE_Y[tLane] + "%";
           pop(other(side), O.blockerPos, "Leap!", "passive");
-          setTimeout(() => { if (M) placeAll(); }, 900);
+          M.blockLeap = true; // slides back when the block comes down
         }
       }
-      if (O.buffs.fortress) Rules.FRONT.forEach((bp) => anim(O.at[bp], "jump"));
+      // who goes up to block: the chosen blocker, or the whole front row under Iron Fortress
+      M.blockEls = O.buffs.fortress ? Rules.FRONT.map((bp) => elOf.get(O.at[bp])) : O.blockerPos ? [elOf.get(O.at[O.blockerPos])] : [];
       Sound.play("spike");
       await wait(180);
       setHolder(null);
@@ -1730,12 +1744,17 @@ async function playRally() {
       const wasNuke = !!T.nuke;
       T.nuke = false;
       Rules.clearRecovering(T); // the attackers' own blocker is back in position
-      elOf.forEach((el) => el.classList.remove("blocking"));
       O.blockerPos = null;
       popPassives(side, holder, res.passives);
       updateStatus();
       const tgt = headPt(other(side), action.target);
+      const lvl = levelFor(side);
+      const epic = !res.out && (wasNuke || lvl >= CONFIG.epicLevel || res.power >= CONFIG.epicPower);
+      if (epic) await spikeWindup(side, holder, [...M.fx].pop() || (wasNuke ? "fire" : "spark"));
+      if (res.power >= CONFIG.boomPower || epic) Sound.play("whoosh");
       if (res.out) {
+        raiseBlock();
+        releaseBlock();
         await flyBall({ x: side === "player" ? 99 : 1, y: tgt.y + 4, gy: tgt.gy + 4 }, 450, 6);
         popAt(side === "player" ? 92 : 8, tgt.y, "OUT!", "bad");
         Sound.play("out");
@@ -1748,28 +1767,41 @@ async function playRally() {
         const bp = headPt(other(side), res.blockerPos);
         const leapt = Rules.lane(other(side), res.blockerPos) !== Rules.lane(other(side), action.target) && blocker.active.id === "leapBlock";
         if (leapt) { bp.y = LANE_Y[Rules.lane(other(side), action.target)] - headH(other(side), res.blockerPos) - 2.5; }
-        anim(blocker, "jump");
-        await flyBall({ x: side === "player" ? 48 : 52, y: bp.y - 4, gy: bp.gy }, 260, 2);
+        raiseBlock();
+        const wall = { x: side === "player" ? 48 : 52, y: bp.y - 4, gy: bp.gy };
+        if (epic) streaks((M.ball.x + wall.x) / 2, (M.ball.y + wall.y) / 2, WAVE_COLOR[[...M.fx].pop()] || "#ffffff", 10, 9);
+        await flyBall(wall, epic ? 110 : 220, epic ? 0 : 2);
         pop(other(side), res.blockerPos, "BLOCKED!", "big");
         Sound.play("block");
         popPassives(other(side), res.blockerPos, res.blockerPassives);
         if (blocker.passive.id === "fortified") swing(other(side), 2, res.blockerPos);
         if (res.chillAttacker && Rules.afflict(hc, "chill")) { pop(side, holder, "Chilled!", "ability"); updateStatus(); }
-        playSprite("puff_gold", side === "player" ? 49 : 51, bp.y + 6);
-        streaks(side === "player" ? 49 : 51, bp.y + 6, "#bfeaff", 10, 6);
-        courtShake("s");
-        setBallFx([]);
+        // the spike smashes into the block...
+        if (epic) {
+          spikeImpact({ x: wall.x, y: wall.y - 6, gy: wall.gy }, Math.max(res.power, CONFIG.boomPower), lvl, wasNuke);
+          playSprite("shield", wall.x, wall.y, { scale: fxScale() + 1 });
+          await wait(150); // hit-stop on the collision
+        } else {
+          playSprite("puff_gold", wall.x, wall.y + 2);
+          streaks(wall.x, wall.y + 2, "#bfeaff", 10, 6);
+          courtShake("s");
+        }
+        // ...and gets rejected straight back down into the attackers' court
         const fall = feet(side, holder);
-        await flyBall({ x: side === "player" ? 44 : 56, y: fall.y, gy: fall.y }, 380, 8);
+        const back = side === "player" ? -1 : 1;
+        const land = { x: wall.x + back * (epic ? 12 : 7), y: fall.y, gy: fall.y };
+        await flyBall(land, epic ? 130 : 200, epic ? 0 : 3);
+        setBallFx([]);
+        playSprite("puff_dust", land.x, land.y, { anchor: "bottom" });
+        ripple(land.x, land.y, "#ffffff", epic ? 14 : 9);
+        if (epic) courtShake("m");
+        await ballBounce(side, holder, epic ? Math.max(res.power, 120) : res.power * 0.8, epic);
+        releaseBlock();
         log(`${who(side, hc)} spikes. Stuffed by ${who(other(side), blocker)}!`);
         await wait(400);
         return { winner: other(side), reason: `${sideWord(other(side))} ${blocker.name} blocked it` };
       }
-      const lvl = levelFor(side);
       log(`${who(side, hc)} spikes${lvl >= 4 || wasNuke ? " with huge power" : ""}!`);
-      const epic = wasNuke || lvl >= CONFIG.epicLevel || res.power >= CONFIG.bigBoomPower;
-      if (epic) await spikeWindup(side, holder, [...M.fx].pop() || (wasNuke ? "fire" : "spark"));
-      if (res.power >= CONFIG.boomPower || epic) Sound.play("whoosh");
       const flight = { ms: epic ? 110 : Math.max(220, 400 - lvl * 30), arc: epic ? 0 : 4, power: res.power, lvl, nuke: wasNuke, epic, after: null };
       flight.after = () => { if (res.poison || res.burn) {
         const victim = O.at[action.target];

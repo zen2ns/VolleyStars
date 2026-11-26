@@ -396,6 +396,8 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 @keyframes blockPulse { 0%, 100% { filter: drop-shadow(0 0 2px #7ad8ff) drop-shadow(0 0 4px #4fa3ff); } 50% { filter: drop-shadow(0 0 4px #bfeaff) drop-shadow(0 0 16px #4fa3ff); } }
 .crt.pick-block:hover .jumper { transform: translateY(-12%); }
 .crt.blocking .jumper { transform: translateY(-24%) scale(1.14); transition: transform 0.2s; }
+.crt.blockup .jumper { transform: translateY(-46%) scale(1.16); transition: transform 0.12s ease-out; }
+.crt .jumper { transition: transform 0.35s ease-in; }
 .crt.blocking .bob { filter: drop-shadow(0 0 3px #bfeaff) drop-shadow(0 0 12px #4fa3ff); }
 .crt.fortress .bob { filter: drop-shadow(0 0 3px #e0f2ff) drop-shadow(0 0 14px #7ab8ff); }
 .crt.recovering { opacity: 0.45; }

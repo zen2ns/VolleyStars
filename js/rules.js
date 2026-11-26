@@ -40,7 +40,9 @@ const CONFIG = {
 
   // Explosions: only spikes at least this strong get a big explosion (tuned to ~1 every 3 rallies)
   boomPower: 100,
-  epicLevel: 5,          // momentum level at which a spike gets the slow-motion windup
+  epicLevel: 6,          // momentum level at which a spike gets the slow-motion windup...
+  epicPower: 130,        // ...or a spike this powerful
+  blockHoldMs: 900,      // how long blockers stay up after the ball goes by
   bounceSpikePower: 80,  // spikes this hard that aren't dug slam the floor and bounce away
   // receivers diving to cover a neighbor: chance = (avg of DEF & PER - floor) / scale, capped
   coverStatFloor: 55, coverStatScale: 150, coverMax: 0.3, coverDiveMult: 0.92,
