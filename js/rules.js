@@ -569,6 +569,12 @@ AI.decide = (team, opp, holder, touch, inIsSet, inQ, combo, smart) => {
     return { type: "free", target: AI.easyTarget(opp, smart, 40) };
   }
 
+  // Strategic early send-over: if every spiker is winded, don't waste a set on a tired
+  // hitter. Send a free ball now and give them a rally to rest. (Smarter CPUs do this.)
+  const spikersAll = mates.filter((p) => Rules.has(team.at[p], "spiker"));
+  if (spikersAll.length && spikersAll.every((p) => team.at[p].winded > 0) && Math.random() < smart) {
+    return { type: "free", target: AI.easyTarget(opp, smart, 40) };
+  }
   if (touch === 1) {
     if (!mates.length) return { type: "free", target: AI.easyTarget(opp, smart, 40) };
     if (Math.random() > smart) return { type: "bump", target: mates[Math.floor(Math.random() * mates.length)] };

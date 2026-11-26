@@ -379,7 +379,15 @@ function startMatch() {
   setMomentum(0);
   updateUltHUD();
   refreshControls();
-  log(`Match start! ${M.serving === "player" ? "You serve" : "CPU serves"} first. First to ${CONFIG.pointsToWin}.`);
+  if (M.mode === "story") {
+    const champ = REGIONS[M.region].battles[M.battle].champion;
+    M.pointsToWin = champ ? 7 : 3;
+    M.winBy = champ ? 2 : 1;
+  } else {
+    M.pointsToWin = CONFIG.pointsToWin;
+    M.winBy = CONFIG.winBy;
+  }
+  log(`Match start! ${M.serving === "player" ? "You serve" : "CPU serves"} first. First to ${M.pointsToWin}.`);
   matchLoop(matchToken);
 }
 
@@ -1055,6 +1063,7 @@ function refreshControls() {
     markOpp((q) => Rules.shankChance(M.cpu, q, power * (1 + CONFIG.comboPowerPerLevel * levelFor("player")), "spike", 0.75) * 2);
   } else if (p.canSpike && !M.freeOn) {
     setStep("player", p.touch, "spike");
+    $("freeToggle").textContent = "Free ball instead";
     const special = M.armed && SPIKE_ABILITIES.includes(M.armed.id) ? M.armed.id : null;
     markOpp((q) => Rules.killChance(M.player, p.holderPos, p.quality, M.cpu, q, levelFor("player"), special).kill * 1.8);
     $("freeToggle").classList.remove("hidden");
@@ -1065,6 +1074,9 @@ function refreshControls() {
     if (p.canSpike) { $("freeToggle").classList.remove("hidden"); $("freeToggle").classList.add("on"); }
   } else {
     setStep("player", p.touch, p.touch === 1 ? "bump" : "set");
+    // you don't have to use all three touches: clicking an opponent sends a free ball over now
+    // (its faint red glow shows it's rarely the best option)
+    markOpp((q) => Rules.shankChance(M.cpu, q, 40, "free") * 3);
     Rules.POSITIONS.forEach((q) => {
       if (q === p.holderPos) return;
       const m = M.player.at[q];
@@ -1233,7 +1245,7 @@ async function matchLoop(token) {
       setTimeout(() => Sound.play(winner === "player" ? "cheer" : "lose"), 250);
       updateUltHUD();
       const { player: a, cpu: b } = M.score;
-      const over = (a >= CONFIG.pointsToWin || b >= CONFIG.pointsToWin) && Math.abs(a - b) >= CONFIG.winBy;
+      const over = (a >= M.pointsToWin || b >= M.pointsToWin) && Math.abs(a - b) >= M.winBy;
       await showBanner(winner === "player" ? "POINT!" : "CPU POINT", reason + (sideOut && !over ? " · Side out, rotate!" : ""), winner !== "player");
       if (over) {
         if (a > b) Sound.play("win");
