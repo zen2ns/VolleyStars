@@ -907,7 +907,6 @@ async function spikeWindup(side, pos, kind) {
   void j.offsetWidth;
   j.classList.add("hang"); // floats up and hangs in the air
   slowmo(true, h.x, h.y);
-  pop(side, pos, "FULL POWER!", "big");
   Sound.play("ult");
   const color = WAVE_COLOR[kind] || "#ffd65c";
   const r = $("court").getBoundingClientRect();
@@ -929,20 +928,54 @@ async function spikeWindup(side, pos, kind) {
   slowmo(false);
   flash("#ffffff");
 }
-// A spike too fast to dig: it slams into the floor and bounces away
-async function ballBounce(side, pos) {
+// Where a spike that beats the receiver hits the floor: just in front of them
+function groundPt(side, pos) {
+  const f = feet(side, pos);
+  const toNet = side === "player" ? 1 : -1;
+  return { x: f.x + toNet * 2, y: f.y, gy: f.y };
+}
+// The spike's flight, decided once we know whether it gets dug
+async function landSpike(side, pos, fl, missed) {
+  const dest = missed ? groundPt(side, pos) : headPt(side, pos);
+  if (fl.epic) {
+    const from = { ...M.ball };
+    streaks((from.x + dest.x) / 2, (from.y + dest.y) / 2, WAVE_COLOR[[...M.fx].pop()] || "#ffffff", 10, 9);
+  }
+  await flyBall(dest, missed ? fl.ms * 0.85 : fl.ms, missed ? 0 : fl.arc);
+  // the explosion goes off on the floor (missed) or at the receiver (dug)
+  spikeImpact(missed ? { x: dest.x, y: dest.y - 8, gy: dest.gy } : dest, fl.power, fl.lvl, fl.nuke);
+  if (missed) { playSprite("puff_dust", dest.x, dest.y, { anchor: "bottom" }); courtShake(fl.power >= CONFIG.bounceSpikePower ? "m" : "s"); }
+  if (fl.after) fl.after();
+  if (!missed && fl.epic) await wait(160); // a beat of hit-stop on a big dig
+}
+// After smashing into the floor the ball keeps going: front row pops up high,
+// back row skims low and fast off the back of the court. Harder spikes go farther.
+async function ballBounce(side, pos, power) {
   const f = feet(side, pos);
   const dir = side === "player" ? -1 : 1; // away from the net
-  const X = (dx) => Rules.clamp(f.x + dir * dx, 2, 98);
-  await flyBall({ x: X(2.5), y: f.y + 1, gy: f.y + 1 }, 90, 0);
-  playSprite("puff_dust", X(2.5), f.y + 1, { anchor: "bottom" });
-  ripple(X(2.5), f.y + 1, "#ffffff", 14);
-  courtShake("s");
-  await flyBall({ x: X(9), y: f.y + 3, gy: f.y + 3 }, 380, 16);
-  ripple(X(9), f.y + 3, "#ffffff", 8);
-  Sound.play("bump");
-  await flyBall({ x: X(13), y: f.y + 4, gy: f.y + 4 }, 260, 6);
-  ripple(X(13), f.y + 4, "#ffffff", 5);
+  const k = Rules.clamp((power - 40) / 80, 0.35, 1.4); // bounce strength
+  let x = M.ball.x, y = f.y;
+  const hop = async (dx, dy, ms, arc, mark) => {
+    x += dir * dx; y += dy;
+    await flyBall({ x, y, gy: y }, ms, arc);
+    if (mark && x > 0 && x < 100) ripple(x, y, "#ffffff", mark);
+  };
+  if (Rules.isFront(pos)) {
+    await hop(9 * k, 2, 420, 18 * k, 8);
+    Sound.play("bump");
+    await hop(6 * k, 1, 300, 7 * k, 5);
+    await hop(3 * k, 0, 200, 2, 0);
+  } else if (k < 0.75) {
+    // a soft spike just skips back and rolls to a stop
+    await hop(10 * k, 1, 260, 5 * k, 6);
+    await hop(5 * k, 1, 220, 1.5, 0);
+  } else {
+    // skims out the back, off the court and out of sight
+    await hop(18 * k, 2, 200 / Math.min(k, 1.2), 4 * k, 9);
+    Sound.play("bump");
+    const target = side === "player" ? -8 : 108;
+    await flyBall({ x: target, y: y + 2, gy: y + 2 }, 260 / Math.min(k, 1.2), 2.5 * k);
+  }
 }
 
 // ---------- ultimates ----------
@@ -1439,7 +1472,7 @@ async function playRally() {
       if (coverer !== incoming.pos) {
         // Cactus Cover: Desacti dives in front of a teammate
         pop(side, coverer, "Cactus Cover!", "ability");
-        await flyBall(headPt(side, coverer), 220, 4);
+        if (!incoming.flight) await flyBall(headPt(side, coverer), 220, 4);
         playSprite("puff_seed", feet(side, coverer).x, feet(side, coverer).y - 6);
         incoming.pos = coverer;
       }
@@ -1449,7 +1482,7 @@ async function playRally() {
         if (ac) {
           pop(side, ac, "Dive!", "ability");
           anim(T.at[ac], "dig");
-          await flyBall(headPt(side, ac), 200, 3);
+          if (!incoming.flight) await flyBall(headPt(side, ac), 200, 3);
           const cf = feet(side, ac);
           playSprite("puff_dust", cf.x, cf.y - 2);
           incoming.pos = ac;
@@ -1460,7 +1493,7 @@ async function playRally() {
         // the blocker is still landing: a teammate has to dive for it
         const np = Rules.availablePos(T, incoming.pos);
         pop(side, incoming.pos, "Recovering!", "passive");
-        await flyBall(headPt(side, np), 200, 4);
+        if (!incoming.flight) await flyBall(headPt(side, np), 200, 4);
         incoming.pos = np;
         incoming.aim *= CONFIG.recoverCoverMult;
       }
@@ -1475,19 +1508,21 @@ async function playRally() {
           updateStatus();
         }
       }
-      setBallFx([]);
       // CPU fires Combo Star at the start of a possession
       if (side === "cpu" && Rules.ultReady(T) && T.ult === "comboStar" && Math.random() < 0.7) { Rules.useUlt(T); ultFx("cpu", "comboStar"); }
       const rc = T.at[incoming.pos];
       const r = Rules.receive(T, incoming.pos, incoming.power, incoming.kind, incoming.aim);
       T.buffs.allBack = false;
+      // a spike is still in the air: it either meets the receiver or smashes into the floor
+      if (incoming.flight) await landSpike(side, incoming.pos, incoming.flight, r.error);
+      setBallFx([]);
       Sound.play(r.error ? "shank" : "dig");
       if (r.error) {
         anim(rc, "shake");
         const f = feet(side, incoming.pos);
-        if (incoming.kind === "spike" && incoming.power >= CONFIG.bounceSpikePower) {
-          pop(side, incoming.pos, "Too fast!", "bad");
-          await ballBounce(side, incoming.pos);
+        if (incoming.flight) {
+          pop(side, incoming.pos, incoming.power >= CONFIG.bounceSpikePower ? "Too fast!" : "Missed it!", "bad");
+          await ballBounce(side, incoming.pos, incoming.power);
         } else {
           await flyBall({ x: f.x + (side === "player" ? -4 : 4), y: f.y, gy: f.y }, 250, 0);
           pop(side, incoming.pos, incoming.kind === "serve" ? "ACE!" : "Shanked!", "bad");
@@ -1735,14 +1770,8 @@ async function playRally() {
       const epic = wasNuke || lvl >= CONFIG.epicLevel || res.power >= CONFIG.bigBoomPower;
       if (epic) await spikeWindup(side, holder, [...M.fx].pop() || (wasNuke ? "fire" : "spark"));
       if (res.power >= CONFIG.boomPower || epic) Sound.play("whoosh");
-      if (epic) {
-        const from = { ...M.ball };
-        streaks((from.x + tgt.x) / 2, (from.y + tgt.y) / 2, WAVE_COLOR[[...M.fx].pop()] || "#ffffff", 10, 9);
-      }
-      await flyBall(tgt, epic ? 110 : Math.max(220, 400 - lvl * 30), epic ? 0 : 4);
-      spikeImpact(tgt, res.power, lvl, wasNuke);
-      if (epic) await wait(160); // a beat of hit-stop to let the explosion land
-      if (res.poison || res.burn) {
+      const flight = { ms: epic ? 110 : Math.max(220, 400 - lvl * 30), arc: epic ? 0 : 4, power: res.power, lvl, nuke: wasNuke, epic, after: null };
+      flight.after = () => { if (res.poison || res.burn) {
         const victim = O.at[action.target];
         const kind = res.burn ? "burn" : "poison";
         const word = res.burn ? "Burned!" : "Poisoned!";
@@ -1753,7 +1782,7 @@ async function playRally() {
           log(`<span class="abil">${who(other(side), victim)} is ${word}</span>`);
         } else pop(other(side), action.target, "Thick Hide", "passive");
         updateStatus();
-      }
+      } };
       if (hc.passive.id === "magmaVeins") swing(side, 1, holder, "Magma Veins");
       if (res.chillAttacker && Rules.afflict(hc, "chill")) {
         const hp = headPt(side, holder);
@@ -1761,7 +1790,7 @@ async function playRally() {
         playSprite("puff_ice", hp.x, hp.y + 8);
         updateStatus();
       }
-      incoming = { fromOpp: true, side: other(side), pos: action.target, power: res.power, kind: "spike", aim: res.aimMult, attacker: hc, attackerSide: side };
+      incoming = { fromOpp: true, side: other(side), pos: action.target, power: res.power, kind: "spike", aim: res.aimMult, attacker: hc, attackerSide: side, flight };
       continue;
     }
 
