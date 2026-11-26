@@ -12,7 +12,7 @@ const CONFIG = {
 
   classBonus: 1.15,         // doing your class's job
   classPenalty: 0.82,       // receiving / setting without that class
-  backRowSpikeMult: 0.85,   // spiking from the back row is weaker (but harder to block)
+  backRowSpikeMult: 0.75,   // spiking from the back row is weaker (but harder to block)
   backRowSetAdjust: -6,     // setting from the back row is a bit worse
   windedMult: 0.8,          // a spiker who spiked recently hits weaker
 
