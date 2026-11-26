@@ -204,6 +204,7 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .crt.pick-mate, .crt.pick-opp { cursor: pointer; }
 .crt.pick-mate .bob { filter: drop-shadow(0 0 2px #45d483) drop-shadow(0 0 7px #45d483aa); }
 .crt.pick-mate.suggest .bob { filter: drop-shadow(0 0 3px #45d483) drop-shadow(0 0 12px #8dffb9); }
+.crt.pick-mate.suggest.front .bob { filter: drop-shadow(0 0 3px #6be89a) drop-shadow(0 0 15px #b6ffd0); }
 .crt.pick-opp .bob {
   filter: drop-shadow(0 0 2px rgba(255, 70, 80, calc(0.35 + 0.65 * var(--k))))
           drop-shadow(0 0 calc(3px + 16px * var(--k)) rgba(255, 40, 50, calc(0.2 + 0.8 * var(--k))));

@@ -1017,7 +1017,7 @@ function askServeType() {
 
 function clearAuras() {
   elOf.forEach((el) => {
-    el.classList.remove("pick-mate", "pick-opp", "suggest", "armed", "blocker-warn", "pick-block");
+    el.classList.remove("pick-mate", "pick-opp", "suggest", "front", "armed", "blocker-warn", "pick-block");
     el.style.setProperty("--k", 0);
   });
 }
@@ -1087,6 +1087,7 @@ function refreshControls() {
       el.classList.add("pick-mate");
       const good = p.touch === 1 ? Rules.has(m, "setter") : Rules.has(m, "spiker") && m.winded === 0;
       if (good) el.classList.add("suggest");
+      if (good && p.touch === 2 && Rules.isFront(q)) el.classList.add("front"); // front row hits harder: a touch brighter
     });
   }
 }
