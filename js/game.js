@@ -192,7 +192,7 @@ function renderUltPick() {
 }
 
 // ---------- opponent (path checkpoint or random CPU team) ----------
-const DIFF_NAME = { easy: "Easy", normal: "Normal", hard: "Hard" };
+const DIFF_NAME = { easy: "Easy", normal: "Medium", hard: "Hard" };
 function setupOpponent() {
   if (builder.mode === "path") {
     const st = STAGES[builder.stage];
@@ -227,7 +227,7 @@ function renderOpponent() {
     attachTooltip(cell, () => c);
     grid.appendChild(cell);
   });
-  const skill = o.smart >= 0.8 ? "Expert" : o.smart >= 0.5 ? "Skilled" : o.smart >= 0.25 ? "Average" : "Beginner";
+  const skill = o.smart >= 0.6 ? "Hard" : o.smart >= 0.2 ? "Medium" : "Easy";
   $("oppInfo").innerHTML = `Ultimate: <b>${CONFIG.ultimates[o.ult].name}</b> · CPU skill: <b>${skill}</b>`;
 }
 
