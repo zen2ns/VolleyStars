@@ -78,7 +78,7 @@ function renderStory() {
   owned.forEach((c) => {
     const el = document.createElement("div");
     el.className = "col-item";
-    el.innerHTML = `<img src="${spriteSrc(c.looks[0])}" alt=""><div>${rankHTML(c)} ${c.name}</div><b>×${Story.owned(c.id)}</b>`;
+    el.innerHTML = `<img src="${spriteSrc(c.looks[0])}" alt=""${sizeStyle(c)}><div>${rankHTML(c)} ${c.name}</div><b>×${Story.owned(c.id)}</b>`;
     attachTooltip(el, () => c);
     col.appendChild(el);
   });
@@ -162,7 +162,7 @@ function showDraft(bt, reg, then) {
     card.style.animationDelay = i * 0.12 + "s";
     card.innerHTML = `
       ${o.wild ? '<div class="wild-tag">✨ Wildcard</div>' : ""}
-      <img src="${spriteSrc(c.looks[0])}" alt="">
+      <img src="${spriteSrc(c.looks[0])}" alt=""${sizeStyle(c)}>
       <div class="dc-name">${rankHTML(c)} ${c.name}</div>
       ${badgesHTML(c)}
       ${STATS.map(([k, short, color]) => `

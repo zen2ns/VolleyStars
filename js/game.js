@@ -78,6 +78,11 @@ function saveTeam() {
 const SPRITE = {};
 const SPRITE_DIM = {}; // trimmed drawing size in pixels, used to size creatures on court
 const spriteSrc = (src) => SPRITE[src] || src;
+// Inline style that shrinks small-drawing Stars (their "size") in menus, same as on court.
+const sizeStyle = (c, flip = false) => {
+  const t = (flip ? "scaleX(-1) " : "") + (c.size && c.size !== 1 ? `scale(${c.size})` : "");
+  return t ? ` style="transform:${t.trim()};transform-origin:50% 100%"` : "";
+};
 function trimSprite(src) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -147,7 +152,7 @@ function renderRoster() {
       ${c.looks.length > 1 ? '<button class="look-btn" title="Change look">Look ⇄</button>' : ""}
       ${builder.mode === "story" ? `<span class="on-team${count >= Story.owned(c.id) ? " full" : ""}">${count} / ${Story.owned(c.id)}</span>`
         : count ? `<span class="on-team">×${count}</span>` : ""}
-      <img src="${lookOf(c)}" alt="${c.name}">
+      <img src="${lookOf(c)}" alt="${c.name}"${sizeStyle(c)}>
       <div class="name">${rankHTML(c)} ${c.name}</div>
       ${badgesHTML(c)}
       ${STATS.map(([k, short, color]) => `
@@ -185,7 +190,7 @@ function renderBuilderGrid() {
     const id = builder.slots[p];
     cell.className = "bcell" + (id ? " filled" : "");
     cell.innerHTML = `<span class="pos-num">${p}</span>` +
-      (id ? `<img src="${lookOf(byId(id))}" alt=""><div class="cname">${byId(id).name}</div>` : "") +
+      (id ? `<img src="${lookOf(byId(id))}" alt=""${sizeStyle(byId(id))}><div class="cname">${byId(id).name}</div>` : "") +
       `<span class="pos-note">${POS_NOTE[p]}</span>`;
     if (id) attachTooltip(cell, () => byId(builder.slots[p]));
     cell.addEventListener("click", () => {
@@ -266,7 +271,7 @@ function renderOpponent() {
     cell.style.gridColumn = Rules.isFront(p) ? 1 : 2;
     cell.className = "bcell filled opp-cell";
     const src = spriteSrc(c.looks[o.looks[p] || 0] || c.looks[0]);
-    const flip = (c.faces || "left") === "right" ? ' style="transform:scaleX(-1)"' : "";
+    const flip = sizeStyle(c, (c.faces || "left") === "right");
     cell.innerHTML = `<span class="pos-num">${p}</span><img src="${src}" alt=""${flip}><div class="cname">${rankHTML(c)} ${c.name}</div>`;
     attachTooltip(cell, () => c);
     grid.appendChild(cell);
