@@ -267,6 +267,7 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .particle.dust { --pc: #b08a5a; } .particle.spark { --pc: #ffe88a; }
 .particle.toxic { --pc: #9dff5a; } .particle.bubble { --pc: #c6ff9a; }
 .particle.lantern { --pc: #ff8c1a; } .particle.ghost { --pc: #c58bff; }
+.particle.volt { --pc: #fff27a; } .particle.ice { --pc: #bfe9ff; }
 .particle.drift { animation: drift 0.8s steps(8) forwards; }
 @keyframes particle { to { opacity: 0; transform: translate(-50%, -50%) scale(0.5); } }
 @keyframes drift { to { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); } }

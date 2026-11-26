@@ -94,7 +94,7 @@ Rules.rotate = (team) => {
 Rules.has = (c, cls) => c.classes.includes(cls);
 // Poison / Burn a creature (Thick Hide is immune). Returns true if it stuck.
 Rules.afflict = (c, kind, rallies = 3) => {
-  if (c.passive.id === "thickHide") return false;
+  if (c.passive.id === "thickHide" && kind !== "chill") return false;
   c[kind] = rallies;
   return true;
 };
@@ -111,6 +111,7 @@ Rules.makeInstance = (base, lookIndex = 0) => ({
   read: 0,          // Adapting: goes up when spiked at, fades each rally
   poison: 0,        // Poisoned: rallies left of digging/passing worse
   burn: 0,          // Burned: same effect as poison, from lava abilities
+  chill: 0,         // Chilled: spikes 20% weaker (ice abilities)
   recovering: false,// blocked and is getting back into position: can't play the next possession
 });
 
@@ -137,6 +138,7 @@ Rules.endRally = (team) => {
     if (c.read > 0) c.read--;
     if (c.poison > 0) c.poison--;
     if (c.burn > 0) c.burn--;
+    if (c.chill > 0) c.chill--;
   });
   team.buffs = {};
   team.blockerPos = null;
@@ -156,6 +158,9 @@ Rules.abilityReady = (team, pos, ctx) => {
     case "venomSpike":
     case "shadowStrike": return holding && ctx.canSpike;
     case "lanternSet":
+    case "joltSet":
+    case "thunderSet":
+    case "headbutt":
     case "tidalSet":     return holding && ctx.touch === 2;
     case "sneakySeed":   return holding && ctx.touch === 2;
     case "hornWall":     return Rules.isFront(pos) && !team.buffs.hornWall;
@@ -167,10 +172,15 @@ Rules.abilityReady = (team, pos, ctx) => {
     case "bubblePass":   return !team.buffs.bubblePass;
     case "slipstream":   return !team.buffs.slipstream;
     case "splashGuard":  return !team.buffs.splashGuard;
+    case "highTide":     return !team.buffs.highTide;
+    case "coldSnap":     return !team.buffs.coldSnap;
+    case "snowdrift":    return !team.buffs.snowdrift;
+    case "glacier":      return !team.buffs.glacier;
   }
   return false;
 };
-Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede", "cactusCover", "leapBlock", "greatWall", "bubblePass", "slipstream", "splashGuard"];
+Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede", "cactusCover", "leapBlock", "greatWall", "bubblePass", "slipstream", "splashGuard",
+  "highTide", "coldSnap", "snowdrift", "glacier"];
 const STEADY = ["steadyHooves", "frillyFins"];
 
 // Splash Guard: the next spike into Frillet's row loses 25% power (returns the new power)
@@ -222,6 +232,7 @@ function receiveSkill(team, pos, kind) {
   let rooted = false;
   if (c.passive.id === "rooted" && !Rules.isFront(pos) && kind === "spike") { skill *= 1.15; rooted = true; }
   if (team.buffs.stampede) skill *= 1.15;
+  if (team.buffs.highTide) skill *= 1.12;
   if (kind === "spike" && team.buffs.allBack) skill *= CONFIG.noBlockDigBonus;
   if (Rules.isAfflicted(c)) skill *= 0.72; // Poisoned or Burned
   if (c.passive.id === "slippery" && kind !== "spike") skill *= 1.1;
@@ -253,7 +264,8 @@ Rules.receive = (team, pos, power, kind, aimMult = 1) => {
   if (c.passive.id === "slippery" && kind !== "spike") passives.push("Slippery");
   if (r.rooted) passives.push("Rooted");
   if (STEADY.includes(c.passive.id)) passives.push(c.passive.name);
-  const quality = CONFIG.receiveBase + (r.skill * aimMult - power) + Rules.rand(-r.spread, r.spread);
+  let quality = CONFIG.receiveBase + (r.skill * aimMult - power) + Rules.rand(-r.spread, r.spread);
+  if (c.passive.id === "hardHead" && kind !== "spike" && quality < 25) { quality = 25; passives.push("Hard Head"); }
   if (quality < CONFIG.errorBelow) {
     const feliPos = Rules.POSITIONS.find((p) => team.at[p].passive.id === "nineLives");
     if (feliPos && !team.nineLivesUsed) {
@@ -296,8 +308,11 @@ Rules.bump = (team, from, to, inQ) => {
 };
 
 // Touch 2 -> 3: a set. Setters are much better at it.
-Rules.set = (team, from, to, inQ, tidal = false, lantern = false) => {
+Rules.set = (team, from, to, inQ, tidal = false, lantern = false, special = null) => {
   const c = team.at[from];
+  if (c.passive.id === "conductor") team.buffs.conductor = true; // next spike +10%
+  if (special === "thunderSet") { team.buffs.thunder = true; return { quality: 100, passives: [] }; }
+  if (special === "joltSet") team.buffs.jolt = true;
   if (tidal) { team.buffs.tidal = true; return { quality: 100, passives: [] }; }
   if (lantern) team.buffs.spooked = true; // the other team's blockers are too scared to block
   const passives = [];
@@ -349,6 +364,11 @@ Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
   if (special === "eruption") power *= 1.6;
   if (atk.buffs.slipBoost) power *= 1.25; // Aquivern's Slipstream
   if (c.passive.id === "kindling" && combo > 0) power *= 1.1;
+  if (c.chill > 0) power *= 0.8;               // Chilled
+  if (atk.buffs.jolt) power *= 1.15;           // Jolt Set
+  if (atk.buffs.thunder) power *= 1.25;        // Thunder Set
+  if (atk.buffs.conductor) power *= 1.1;       // Thundroak's Conductor
+  if (special === "headbutt") power *= 0.95;
   if (atk.nuke) power *= 1.8; // Nuclear Spike
   if (atk.buffs.tidal) power *= 1.15;
   if (c.passive.id === "heatingUp") power *= 1 + Math.min(0.2, 0.02 * c.spikes);
@@ -360,7 +380,7 @@ Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
 // spiking straight into that row (at the blocker or the receiver behind it) is very
 // likely to get blocked; the next row over has a small chance; the far row none.
 Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
-  if (atk.buffs.spooked) return []; // Jack-o'-Lantern Set: nobody dares to block
+  if (atk.buffs.spooked || atk.buffs.thunder) return []; // Jack-o'-Lantern / Thunder Set: unblockable
   const fortress = !!def.buffs.fortress;
   if (!fortress && !def.blockerPos) return []; // "No block"
   const spiker = atk.at[fromPos];
@@ -378,7 +398,8 @@ Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
     const blockSkill = Rules.eff(def, b, "def") * 0.5 + Rules.eff(def, b, "per") * 0.35 + Rules.eff(def, b, "str") * 0.15;
     let chance = Rules.clamp(CONFIG.blockBase + (blockSkill - power * 0.85) * 0.006, 0.22, 0.65);
     if (b.passive.id === "ironShell") chance *= 1.2;
-    if (b.passive.id === "fortified") chance *= 1.4;
+    if (b.passive.id === "fortified" || b.passive.id === "frozenWall") chance *= 1.4;
+    if (b.passive.id === "hardHorns") chance *= 1.25;
     if (b.active.id === "hornWall" && def.buffs.hornWall) chance *= 1.35;
     if (spiker.passive.id === "menacing") chance *= 0.65;
     if (!Rules.isFront(fromPos)) chance *= 0.8;
@@ -403,6 +424,15 @@ Rules.spike = (atk, fromPos, inQ, def, targetPos, timing, special, combo = 0) =>
   if (c.passive.id === "heatingUp" && c.spikes > 0) passives.push("Heating Up");
   let power = Rules.spikeBasePower(atk, fromPos, inQ, combo, special) + Rules.rand(0, 12);
   power *= CONFIG.timing[timing].power;
+  // the defending team's ice
+  let chillAttacker = false;
+  if (def.buffs.coldSnap) { power *= 0.8; def.buffs.coldSnap = false; passives.push("Cold Snap!"); }
+  if (def.buffs.glacier) { power *= 0.8; chillAttacker = true; passives.push("Glacier!"); }
+  if (def.buffs.snowdrift) {
+    const fp = Rules.POSITIONS.find((p) => def.at[p].active.id === "snowdrift");
+    if (fp && Rules.lane(def.side, fp) === Rules.lane(def.side, targetPos)) { power *= 0.75; passives.push("Snowdrift!"); }
+  }
+  atk.buffs.jolt = false; atk.buffs.conductor = false;
   atk.buffs.tidal = false;
   atk.buffs.slipBoost = false;
   c.spikes++;
@@ -418,17 +448,19 @@ Rules.spike = (atk, fromPos, inQ, def, targetPos, timing, special, combo = 0) =>
     const blocks = Rules.blockChances(atk, fromPos, def, targetPos, power);
     atk.buffs.spooked = false;
     if (blocks.length && c.passive.id === "menacing") passives.push("Menacing");
+    atk.buffs.thunder = false;
     for (const b of blocks) {
       if (Math.random() < b.chance) {
         const bpid = def.at[b.pos].passive.id;
-        const bp = bpid === "ironShell" ? ["Iron Shell"] : bpid === "fortified" ? ["Fortified"] : [];
-        return { blocked: true, blockerPos: b.pos, power, passives, blockerPassives: bp };
+        const bp = bpid === "ironShell" ? ["Iron Shell"] : bpid === "fortified" ? ["Fortified"] : bpid === "frozenWall" ? ["Frozen Wall"] : bpid === "hardHorns" ? ["Hard Horns"] : [];
+        return { blocked: true, blockerPos: b.pos, power, passives, blockerPassives: bp, chillAttacker: chillAttacker || bpid === "frozenWall" };
       }
     }
   }
   atk.buffs.spooked = false;
   if (spooked) passives.push("Blockers spooked!");
-  return { power, aimMult: a.aimMult, passives, poison: special === "venomSpike", burn: special === "eruption" || special === "magmaSpit" };
+  atk.buffs.thunder = false;
+  return { power, aimMult: a.aimMult, passives, poison: special === "venomSpike", burn: special === "eruption" || special === "magmaSpit", chillAttacker };
 };
 
 // Estimated chance a spike at targetPos wins the point (for the red target glow)
@@ -546,6 +578,8 @@ AI.preRally = (team, receivingServe, smart) => {
     if (id === "bubblePass" && receivingServe && Math.random() < smart * 0.7) used.push(p);
     if (id === "slipstream" && Math.random() < smart * 0.6) used.push(p);
     if (id === "splashGuard" && !receivingServe && Math.random() < smart * 0.6) used.push(p);
+    if (id === "highTide" && Math.random() < smart * 0.6) used.push(p);
+    if (["coldSnap", "snowdrift", "glacier"].includes(id) && !receivingServe && Math.random() < smart * 0.6) used.push(p);
   });
   used.forEach((p) => Rules.useAbility(team, p));
   return used;
@@ -590,6 +624,9 @@ AI.decide = (team, opp, holder, touch, inIsSet, inQ, combo, smart) => {
   }
 
   // touch 2
+  if (c.active.id === "headbutt" && Rules.abilityReady(team, holder, ctx) && Math.random() < 0.35 * smart) {
+    return { type: "spike", target: AI.spikeTarget(team, holder, inQ, opp, smart, combo, "headbutt"), special: "headbutt", timing: AI.timing(smart) };
+  }
   if (c.active.id === "sneakySeed" && Rules.abilityReady(team, holder, ctx) && Math.random() < 0.3 * smart) {
     return { type: "sneaky", target: AI.easyTarget(opp, smart, 60), special: "sneakySeed" };
   }
@@ -605,7 +642,7 @@ AI.decide = (team, opp, holder, touch, inIsSet, inQ, combo, smart) => {
       if (sc > bestScore) { bestScore = sc; best = p; }
     });
   }
-  const setAbility = ["tidalSet", "lanternSet"].includes(c.active.id) && Rules.abilityReady(team, holder, ctx) && Math.random() < smart;
+  const setAbility = ["tidalSet", "lanternSet", "joltSet", "thunderSet"].includes(c.active.id) && Rules.abilityReady(team, holder, ctx) && Math.random() < smart;
   return { type: "set", target: best, special: setAbility ? c.active.id : null };
 };
 

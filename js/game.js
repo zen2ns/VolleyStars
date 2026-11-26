@@ -451,9 +451,11 @@ function updateStatus() {
       el.classList.toggle("stampede", !!T.buffs.stampede);
       el.classList.toggle("poisoned", c.poison > 0);
       // a little pixel flame over the head shows buffs and poison (green glow only ever means "pass here")
-      const buffOn = (["deepRoots", "cactusCover", "leapBlock", "hornWall", "greatWall", "bubblePass", "slipstream", "splashGuard"].includes(c.active.id) && !!T.buffs[c.active.id]);
-      const buffFlame = { hornWall: "flame_gold", greatWall: "flame_gold", bubblePass: "flame_tidal", slipstream: "flame_tidal", splashGuard: "flame_tidal" }[c.active.id] || "flame_seed";
-      const badge = c.burn > 0 ? "flame_fire" : c.poison > 0 ? "flame_toxic" : buffOn ? buffFlame : null;
+      const buffOn = (["deepRoots", "cactusCover", "leapBlock", "hornWall", "greatWall", "bubblePass", "slipstream", "splashGuard",
+        "highTide", "coldSnap", "snowdrift", "glacier"].includes(c.active.id) && !!T.buffs[c.active.id]);
+      const buffFlame = { hornWall: "flame_gold", greatWall: "flame_gold", bubblePass: "flame_tidal", slipstream: "flame_tidal", splashGuard: "flame_tidal",
+        highTide: "flame_tidal", coldSnap: "flame_ice", snowdrift: "flame_ice", glacier: "flame_ice" }[c.active.id] || "flame_seed";
+      const badge = c.burn > 0 ? "flame_fire" : c.poison > 0 ? "flame_toxic" : c.chill > 0 ? "flame_ice" : buffOn ? buffFlame : null;
       setBadge(el, badge);
       el.classList.toggle("recovering", !!c.recovering);
       el.classList.toggle("fortress", !!T.buffs.fortress && Rules.isFront(p));
@@ -516,11 +518,11 @@ function sheetInfo(name) {
   return { w: 32, h: 32, frames: 1 };
 }
 const FX_NAMES = [
-  ...["fire", "hot", "shadow", "tidal", "toxic", "seed", "lantern"].flatMap((k) => [1, 2, 3].map((t) => `ring_${k}_${t}`)),
-  ...["fire", "shadow", "toxic", "seed", "lantern", "tidal"].map((k) => "boom_" + k),
-  ...["fire", "shadow", "toxic", "seed", "lantern", "ghost", "dust", "gold", "tidal"].map((k) => "puff_" + k),
+  ...["fire", "hot", "shadow", "tidal", "toxic", "seed", "lantern", "ice", "volt"].flatMap((k) => [1, 2, 3].map((t) => `ring_${k}_${t}`)),
+  ...["fire", "shadow", "toxic", "seed", "lantern", "tidal", "ice", "volt"].map((k) => "boom_" + k),
+  ...["fire", "shadow", "toxic", "seed", "lantern", "ghost", "dust", "gold", "tidal", "ice", "volt"].map((k) => "puff_" + k),
   ...["white", "gold", "orange", "purple", "blue", "green", "toxic"].map((k) => "wave_" + k),
-  ...["fire", "shadow", "tidal", "toxic", "seed", "lantern", "gold"].map((k) => "flame_" + k),
+  ...["fire", "shadow", "tidal", "toxic", "seed", "lantern", "gold", "ice", "volt"].map((k) => "flame_" + k),
   "shield", "sparkle",
 ];
 FX_NAMES.forEach((n) => { const i = new Image(); i.src = `assets/fx/${n}.png`; }); // preload
@@ -590,10 +592,10 @@ function swing(side, n, pos, text) {
 function setPossession(side) { M.poss = side; updateFlames(); }
 
 // Which pixel flame ring the ball wears: the ability's color, or plain fire for momentum
-const RING_OF = { none: "fire", fire: "hot", shadow: "shadow", tidal: "tidal", toxic: "toxic", seed: "seed", lantern: "lantern" };
+const RING_OF = { none: "fire", fire: "hot", shadow: "shadow", tidal: "tidal", toxic: "toxic", seed: "seed", lantern: "lantern", volt: "volt" };
 function buildFlames() { /* the ring is a sprite now; nothing to build */ }
 function primaryFx() {
-  for (const k of ["shadow", "toxic", "tidal", "lantern", "fire", "seed"]) if (M.fx.has(k)) return k;
+  for (const k of ["shadow", "toxic", "volt", "tidal", "lantern", "fire", "seed"]) if (M.fx.has(k)) return k;
   return "none";
 }
 let ringFrame = 0, ringInfo = null;
@@ -795,6 +797,19 @@ function abilityFx(side, team, pos) {
     }
     case "hornWall": playSprite("puff_gold", f.x, f.y - 8); addShield(side, pos); break;
     case "deepRoots": playSprite("puff_seed", f.x, f.y - 4); ripple(f.x, f.y, "#5fd35f", 12); break;
+    case "coldSnap": case "snowdrift":
+      playSprite("puff_ice", h.x, h.y + 4); ripple(f.x, f.y, "#4fc3ff", 12); break;
+    case "glacier":
+      Rules.POSITIONS.forEach((p) => { const ff = feet(side, p); playSprite("puff_ice", ff.x, ff.y - 6); });
+      flash("#bfe9ff"); break;
+    case "highTide":
+      Rules.POSITIONS.forEach((p) => { const ff = feet(side, p); playSprite("puff_tidal", ff.x, ff.y, { anchor: "bottom" }); });
+      Sound.play("water"); break;
+    case "joltSet": playSprite("puff_volt", h.x, h.y + 4); streaks(h.x, h.y + 6, "#fff27a", 8, 5); break;
+    case "thunderSet":
+      playSprite("puff_volt", h.x, h.y + 4, { scale: fxScale() + 1 }); streaks(h.x, h.y + 6, "#fff27a", 14, 8);
+      flash("#fff27a"); courtShake("s"); break;
+    case "headbutt": playSprite("puff_gold", h.x, h.y + 6); courtShake("s"); break;
     case "eruption":
       playSprite("puff_fire", h.x, h.y + 4, { scale: fxScale() + 1 }); streaks(h.x, h.y + 6, "#ff7a1a", 12, 7); courtShake("s"); break;
     case "magmaSpit": playSprite("puff_fire", h.x, h.y + 4); streaks(h.x, h.y + 6, "#ff7a1a", 8, 5); break;
@@ -836,8 +851,8 @@ function clearRallyFx() {
 
 // Big, satisfying hit landing: a pixel explosion that matches the ball's ability,
 // drawn bigger (chunkier) and with more shake the more power and momentum there is.
-const BOOM_OF = { fire: "fire", flame: "fire", shadow: "shadow", toxic: "toxic", tidal: "tidal", seed: "seed", lantern: "lantern" };
-const WAVE_COLOR = { fire: "#ff6a00", flame: "#ffb020", shadow: "#b14dff", toxic: "#7dff5a", tidal: "#4fc3ff", seed: "#5fd35f", lantern: "#ff8c1a", spark: "#ffd65c" };
+const BOOM_OF = { fire: "fire", flame: "fire", shadow: "shadow", toxic: "toxic", tidal: "tidal", seed: "seed", lantern: "lantern", volt: "volt" };
+const WAVE_COLOR = { fire: "#ff6a00", flame: "#ffb020", shadow: "#b14dff", toxic: "#7dff5a", tidal: "#4fc3ff", seed: "#5fd35f", lantern: "#ff8c1a", spark: "#ffd65c", volt: "#4fc3ff" };
 function spikeImpact(pt, power, level, nuke = false) {
   // Big explosions only for genuinely huge spikes (about one every three rallies)
   const tier = nuke || power >= CONFIG.bigBoomPower ? 3 : power >= CONFIG.boomPower ? 2 : power >= 80 ? 1 : 0;
@@ -940,9 +955,9 @@ function ultFx(side, u) {
 }
 
 // ---------- abilities (player) ----------
-const ARMABLE = ["fireball", "shadowStrike", "venomSpike", "eruption", "magmaSpit", "tidalSet", "lanternSet", "sneakySeed"];
+const ARMABLE = ["fireball", "shadowStrike", "venomSpike", "eruption", "magmaSpit", "tidalSet", "lanternSet", "sneakySeed", "joltSet", "thunderSet", "headbutt"];
 const SPIKE_ABILITIES = ["fireball", "shadowStrike", "venomSpike", "eruption", "magmaSpit"];
-const SET_ABILITIES = ["tidalSet", "lanternSet"];
+const SET_ABILITIES = ["tidalSet", "lanternSet", "joltSet", "thunderSet"];
 
 function abilityCtx() {
   const p = M && M.pending;
@@ -1056,7 +1071,7 @@ function refreshControls() {
     return;
   }
   const holder = M.player.at[p.holderPos];
-  const sneaky = M.armed && M.armed.id === "sneakySeed";
+  const sneaky = M.armed && (M.armed.id === "sneakySeed" || M.armed.id === "headbutt");
   const attackTouch = p.canSpike || p.touch >= 3;
 
   if (sneaky) {
@@ -1123,6 +1138,7 @@ function onCreatureClick(side, c) {
     action = { type: p.touch === 1 ? "bump" : "set", target: pos, special };
   } else if (side === "cpu" && el.classList.contains("pick-opp")) {
     if (M.armed && M.armed.id === "sneakySeed") action = { type: "sneaky", target: pos, special: "sneakySeed" };
+    else if (M.armed && M.armed.id === "headbutt") action = { type: "spike", target: pos, special: "headbutt" };
     else if (p.canSpike && !M.freeOn) {
       const special = M.armed && SPIKE_ABILITIES.includes(M.armed.id) ? M.armed.id : null;
       action = { type: "spike", target: pos, special, ult: M.ultArmed };
@@ -1158,7 +1174,7 @@ $("musicBtn").addEventListener("click", () => { Sound.setMusic(!Sound.musicOn); 
 refreshSoundBtns();
 
 // ---------- timing bar (spikes and hard serves) ----------
-function runTiming(ctrl) {
+function runTiming(ctrl, slow = 1) {
   const token = matchToken;
   return new Promise((resolve) => {
     const good = 10 + ctrl * 0.12;          // % width of the green zone
@@ -1171,7 +1187,7 @@ function runTiming(ctrl) {
     $("timingPerfect").style.width = perfect + "%";
     box.classList.remove("hidden");
     const start = performance.now();
-    const period = 850; // ms for one sweep
+    const period = 850 * slow; // ms for one sweep (Jolt Set doubles it)
     let pos = 0, done = false;
 
     function finish(grade) {
@@ -1272,7 +1288,7 @@ async function matchLoop(token) {
   }
 }
 
-const FX_OF = { fireball: "fire", shadowStrike: "shadow", tidalSet: "tidal", sneakySeed: "seed", venomSpike: "toxic", lanternSet: "lantern", eruption: "fire", magmaSpit: "fire" };
+const FX_OF = { fireball: "fire", shadowStrike: "shadow", tidalSet: "tidal", sneakySeed: "seed", venomSpike: "toxic", lanternSet: "lantern", eruption: "fire", magmaSpit: "fire", joltSet: "volt", thunderSet: "volt" };
 
 // Plays one rally. Returns { winner, reason }.
 async function playRally() {
@@ -1410,6 +1426,13 @@ async function playRally() {
           pop(side, holder, w, k);
         }
         popPassives(side, holder, r.passives);
+        if (["chillyTouch", "frozenWall"].includes(rc.passive.id) && incoming.kind === "spike" && incoming.attacker && Rules.afflict(incoming.attacker, "chill")) {
+          const ap = posOf(teamOf(incoming.attackerSide), incoming.attacker);
+          pop(side, holder, rc.passive.name, "passive");
+          pop(incoming.attackerSide, ap, "Chilled!", "ability");
+          const g = headPt(incoming.attackerSide, ap);
+          playSprite("puff_ice", g.x, g.y + 8);
+        }
         if (rc.passive.id === "prickly" && incoming.kind === "spike" && incoming.attacker) {
           const stuck = Rules.afflict(incoming.attacker, "poison");
           const ap = posOf(teamOf(incoming.attackerSide), incoming.attacker);
@@ -1423,6 +1446,7 @@ async function playRally() {
       const bigDig = incoming.kind === "spike" && incoming.power >= 80 && q >= 55;
       swing(side, bigDig ? 2 : Rules.comboGain("pass", q), holder, bigDig ? "Big dig! Momentum swing" : null);
       if (bigDig && T.at[holder].passive.id === "desertCalm") swing(side, 1, holder, "Desert Calm");
+      if (T.buffs.highTide && q >= 75) swing(side, 1, holder, "High Tide");
       updateStatus();
     } else {
       holder = incoming.pos; q = incoming.quality; touch = incoming.touch; isSet = incoming.isSet;
@@ -1486,7 +1510,7 @@ async function playRally() {
     if (action.type === "bump" || action.type === "set") {
       const asSet = action.type === "set";
       const mate = T.at[action.target];
-      const p = asSet ? Rules.set(T, holder, action.target, q, action.special === "tidalSet", action.special === "lanternSet") : Rules.bump(T, holder, action.target, q);
+      const p = asSet ? Rules.set(T, holder, action.target, q, action.special === "tidalSet", action.special === "lanternSet", action.special) : Rules.bump(T, holder, action.target, q);
       anim(hc, asSet ? "jump" : "dig");
       Sound.play(asSet ? "set" : "bump");
       setHolder(null);
@@ -1502,6 +1526,9 @@ async function playRally() {
       if (action.special === "lanternSet") swing(side, 2, holder);
       swing(side, Rules.comboGain(asSet ? "set" : "pass", p.quality), holder, p.quality >= 80 && !action.special ? (asSet ? "Perfect set!" : "Perfect pass!") : null);
       if (!asSet && hc.passive.id === "tailwind") swing(side, 1, holder, "Tailwind");
+      if (asSet && hc.passive.id === "static") swing(side, 1, holder, "Static");
+      if (asSet && hc.passive.id === "conductor") pop(side, holder, "Conductor", "passive");
+      if (T.buffs.highTide && p.quality >= 75) swing(side, 1, holder, "High Tide");
       if (!asSet && hc.active.id === "slipstream" && T.buffs.slipstream) {
         T.buffs.slipBoost = true;
         pop(side, holder, "Slipstream!", "ability");
@@ -1523,7 +1550,9 @@ async function playRally() {
 
     // ----- spike -----
     if (action.type === "spike") {
-      const timing = side === "player" ? await runTiming(hc.ctrl) : action.timing;
+      const jolt = !!T.buffs.jolt;
+      let timing = side === "player" ? await runTiming(hc.ctrl, jolt ? 2 : 1) : action.timing;
+      if (side === "cpu" && jolt) timing = { miss: "poor", poor: "ok", ok: "good", good: "perfect", perfect: "perfect" }[timing];
       checkAlive(token);
       const t = CONFIG.timing[timing];
       anim(hc, "jump");
@@ -1579,6 +1608,7 @@ async function playRally() {
         Sound.play("block");
         popPassives(other(side), res.blockerPos, res.blockerPassives);
         if (blocker.passive.id === "fortified") swing(other(side), 2, res.blockerPos);
+        if (res.chillAttacker && Rules.afflict(hc, "chill")) { pop(side, holder, "Chilled!", "ability"); updateStatus(); }
         playSprite("puff_gold", side === "player" ? 49 : 51, bp.y + 6);
         streaks(side === "player" ? 49 : 51, bp.y + 6, "#bfeaff", 10, 6);
         courtShake("s");
@@ -1607,6 +1637,12 @@ async function playRally() {
         updateStatus();
       }
       if (hc.passive.id === "magmaVeins") swing(side, 1, holder, "Magma Veins");
+      if (res.chillAttacker && Rules.afflict(hc, "chill")) {
+        const hp = headPt(side, holder);
+        pop(side, holder, "Chilled!", "ability");
+        playSprite("puff_ice", hp.x, hp.y + 8);
+        updateStatus();
+      }
       incoming = { fromOpp: true, side: other(side), pos: action.target, power: res.power, kind: "spike", aim: res.aimMult, attacker: hc, attackerSide: side };
       continue;
     }

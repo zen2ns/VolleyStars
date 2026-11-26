@@ -21,6 +21,8 @@ PAL = {
     "lantern": ["#6a1a00", "#d45a00", "#ff8c1a", "#ffc84a", "#fff2c0"],
     "dust":    ["#5a4028", "#8a6440", "#b08a5a", "#d8b888", "#f2e2c4"],
     "gold":    ["#8a5a00", "#d49a00", "#ffcc33", "#ffe88a", "#ffffff"],
+    "ice":     ["#1a3a6a", "#3f7fd0", "#8fd0ff", "#dff4ff", "#ffffff"],
+    "volt":    ["#2a2a8a", "#3f7bff", "#7ad8ff", "#fff27a", "#ffffff"],
 }
 SMOKE = {
     "gray":   ((150, 138, 136, 255), (104, 94, 94, 255), (58, 50, 52, 255)),
@@ -250,7 +252,7 @@ def save(img, name): img.save(os.path.join(OUT, name + ".png"))
 
 if __name__ == "__main__":
     # flame rings: one per ability color, 3 sizes (momentum tiers)
-    for name in ["fire", "hot", "shadow", "tidal", "toxic", "seed", "lantern"]:
+    for name in ["fire", "hot", "shadow", "tidal", "toxic", "seed", "lantern", "ice", "volt"]:
         for tier, (size, length) in enumerate([(48, 3.2), (60, 6.0), (72, 8.6)], start=1):
             save(flame_ring(PAL[name], size, length, seed=tier), f"ring_{name}_{tier}")
     # big impacts
@@ -260,11 +262,13 @@ if __name__ == "__main__":
     save(burst(PAL["seed"], smoke=None, seed=13, n_embers=24), "boom_seed")
     save(burst(PAL["lantern"], smoke="purple", ember_pal=PAL["shadow"], seed=17), "boom_lantern")
     save(splash(), "boom_tidal")
+    save(burst(PAL["ice"], smoke=None, ember_pal=PAL["ice"], seed=23, n_embers=22), "boom_ice")
+    save(burst(PAL["volt"], smoke=None, ember_pal=PAL["volt"], seed=29, n_embers=26), "boom_volt")
     save(sparkle(), "sparkle")
     # small bursts for ability activations, digs and blocks (32px)
     for name, pal, smk in [("fire", "fire", "gray"), ("shadow", "shadow", "purple"), ("toxic", "toxic", "purple"),
                            ("seed", "seed", None), ("lantern", "lantern", None), ("ghost", "shadow", None),
-                           ("dust", "dust", "dust"), ("gold", "gold", None)]:
+                           ("dust", "dust", "dust"), ("gold", "gold", None), ("ice", "ice", None), ("volt", "volt", None)]:
         save(burst(PAL[pal], size=32, scale=0.5, smoke=smk, n_embers=8, n_puffs=4, seed=21), f"puff_{name}")
     save(splash(size=32, scale=0.5), "puff_tidal")
     # floor shockwaves
@@ -272,6 +276,6 @@ if __name__ == "__main__":
                       ("blue", "#4fc3ff"), ("green", "#5fd35f"), ("toxic", "#9dff5a")]:
         save(wave(col), f"wave_{name}")
     save(shield(), "shield")
-    for name in ["fire", "shadow", "tidal", "toxic", "seed", "lantern", "gold"]:
+    for name in ["fire", "shadow", "tidal", "toxic", "seed", "lantern", "gold", "ice", "volt"]:
         save(small_flame(PAL[name]), f"flame_{name}")
     print("done", len(os.listdir(OUT)), "files")
