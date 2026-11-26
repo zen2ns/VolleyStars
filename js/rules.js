@@ -57,9 +57,10 @@ const CONFIG = {
   //   smart  = how good its choices are (targets, passes, blocks, abilities), 0-1
   //   timing = how well it hits its spike/serve timing bar, 0-1
   difficulty: {
-    easy:   { smart: 0.1,  timing: 0.05 },
-    normal: { smart: 0.3,  timing: 0.25 },
-    hard:   { smart: 0.85, timing: 0.78 },
+    // team = how likely the CPU is to pick each rank when building its team
+    easy:   { smart: 0.1,  timing: 0.05, team: { D: 6, C: 3, B: 0.6, A: 0.1, S: 0 } },
+    normal: { smart: 0.3,  timing: 0.25, team: { D: 1.5, C: 4, B: 3, A: 0.8, S: 0.3 } },
+    hard:   { smart: 0.85, timing: 0.78, team: { D: 0.1, C: 0.8, B: 3, A: 6, S: 8 } },
   },
 };
 
@@ -165,10 +166,21 @@ Rules.abilityReady = (team, pos, ctx) => {
     case "greatWall":    return Rules.isFront(pos) && !team.buffs.greatWall;
     case "bubblePass":   return !team.buffs.bubblePass;
     case "slipstream":   return !team.buffs.slipstream;
+    case "splashGuard":  return !team.buffs.splashGuard;
   }
   return false;
 };
-Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede", "cactusCover", "leapBlock", "greatWall", "bubblePass", "slipstream"];
+Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede", "cactusCover", "leapBlock", "greatWall", "bubblePass", "slipstream", "splashGuard"];
+const STEADY = ["steadyHooves", "frillyFins"];
+
+// Splash Guard: the next spike into Frillet's row loses 25% power (returns the new power)
+Rules.splashGuard = (team, pos, power) => {
+  if (!team.buffs.splashGuard) return null;
+  const f = Rules.POSITIONS.find((p) => team.at[p].active.id === "splashGuard");
+  if (!f || Rules.lane(team.side, f) !== Rules.lane(team.side, pos)) return null;
+  team.buffs.splashGuard = false;
+  return power * 0.75;
+};
 
 // Cactus Cover: a spike aimed at a teammate next to Desacti gets dug by Desacti instead
 Rules.coverPos = (team, pos, kind) => {
@@ -216,7 +228,7 @@ function receiveSkill(team, pos, kind) {
   const adapting = kind === "spike" && c.read > 0;
   if (adapting) skill *= 1 + CONFIG.adaptPerLevel * c.read;
   const cls = Rules.has(c, "receiver") ? CONFIG.classBonus : CONFIG.classPenalty;
-  return { skill: skill * cls, spread: c.passive.id === "steadyHooves" ? 10 : 20, rooted, adapting };
+  return { skill: skill * cls, spread: STEADY.includes(c.passive.id) ? 10 : 20, rooted, adapting };
 }
 
 // Receiving a ball from the other side. kind = "serve" | "spike" | "free".
@@ -240,7 +252,7 @@ Rules.receive = (team, pos, power, kind, aimMult = 1) => {
   if (c.burn > 0) passives.push("Burned…");
   if (c.passive.id === "slippery" && kind !== "spike") passives.push("Slippery");
   if (r.rooted) passives.push("Rooted");
-  if (c.passive.id === "steadyHooves") passives.push("Steady Hooves");
+  if (STEADY.includes(c.passive.id)) passives.push(c.passive.name);
   const quality = CONFIG.receiveBase + (r.skill * aimMult - power) + Rules.rand(-r.spread, r.spread);
   if (quality < CONFIG.errorBelow) {
     const feliPos = Rules.POSITIONS.find((p) => team.at[p].passive.id === "nineLives");
@@ -277,10 +289,10 @@ Rules.bump = (team, from, to, inQ) => {
     team.buffs.bubblePass = false;
     return { quality: 92, passives: ["Bubble Pass!"] };
   }
-  const spread = c.passive.id === "steadyHooves" ? 5 : 10;
+  const spread = STEADY.includes(c.passive.id) ? 5 : 10;
   const poisoned = Rules.isAfflicted(c) ? 12 : 0;
   const q = inQ * 0.55 + Rules.eff(team, c, "ctrl") * 0.45 - poisoned - farPenalty(team, c, from, to) + Rules.rand(-spread, spread);
-  return { quality: Rules.clamp(q, 0, 100), error: q < CONFIG.errorBelow, passives: spread === 5 ? ["Steady Hooves"] : [] };
+  return { quality: Rules.clamp(q, 0, 100), error: q < CONFIG.errorBelow, passives: spread === 5 ? [c.passive.name] : [] };
 };
 
 // Touch 2 -> 3: a set. Setters are much better at it.
@@ -530,6 +542,7 @@ AI.preRally = (team, receivingServe, smart) => {
     if (id === "greatWall" && !receivingServe && Math.random() < smart * 0.7) used.push(p);
     if (id === "bubblePass" && receivingServe && Math.random() < smart * 0.7) used.push(p);
     if (id === "slipstream" && Math.random() < smart * 0.6) used.push(p);
+    if (id === "splashGuard" && !receivingServe && Math.random() < smart * 0.6) used.push(p);
   });
   used.forEach((p) => Rules.useAbility(team, p));
   return used;
@@ -588,8 +601,15 @@ AI.decide = (team, opp, holder, touch, inIsSet, inQ, combo, smart) => {
 };
 
 // Build a CPU team of 6: spikers up front, passers in back
-AI.buildTeam = (roster) => {
-  const pick = [...roster].sort(() => Math.random() - 0.5).slice(0, CONFIG.teamSize);
+AI.buildTeam = (roster, weights = null) => {
+  // pick 6 different creatures; with weights, better (or worse) ranks are more likely
+  const pool = [...roster], pick = [];
+  while (pick.length < CONFIG.teamSize && pool.length) {
+    const w = pool.map((c) => (weights ? weights[c.rank] ?? 1 : 1) + 0.0001);
+    let roll = Math.random() * w.reduce((a, b) => a + b, 0), k = 0;
+    while (roll > w[k]) { roll -= w[k]; k++; }
+    pick.push(pool.splice(k, 1)[0]);
+  }
   pick.sort((a, b) => (Rules.has(b, "spiker") ? 1 : 0) - (Rules.has(a, "spiker") ? 1 : 0));
   const order = [4, 3, 2, 1, 6, 5];
   const at = {};

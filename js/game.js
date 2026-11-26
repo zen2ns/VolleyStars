@@ -28,7 +28,8 @@ function rankHTML(c) {
 function tooltipHTML(c) {
   const live = c.cooldown !== undefined
     ? `<div class="tip-ab">${c.cooldown > 0 ? `Ability recharging: ${c.cooldown} rall${c.cooldown === 1 ? "y" : "ies"}` : "Ability ready ✨"}${c.winded > 0 ? "<br>💨 Winded: spikes weaker" : ""}</div>` : "";
-  return `${rankHTML(c)} <b>${c.name}</b> <span class="muted">${c.classes.join(", ")}</span>` +
+  // rank only shows on the team select screen (in a match, creatures carry a cooldown field)
+  return `${c.cooldown === undefined ? rankHTML(c) + " " : ""}<b>${c.name}</b> <span class="muted">${c.classes.join(", ")}</span>` +
     STATS.map(([k, , , full]) => `<div>${full}: ${c[k]}</div>`).join("") +
     `<div class="tip-ab"><i>Passive · ${c.passive.name}:</i> ${c.passive.text}</div>` +
     `<div class="tip-ab"><i>Active · ${c.active.name}:</i> ${c.active.text}</div>` + live;
@@ -265,7 +266,7 @@ function startMatch() {
   M = {
     diff, smart: d.smart, timingSkill: d.timing,
     player: Rules.makeTeam("player", at, 1, builder.ult),
-    cpu: Rules.makeTeam("cpu", AI.buildTeam(CREATURES), 1, Object.keys(CONFIG.ultimates)[Math.floor(Math.random() * 3)]),
+    cpu: Rules.makeTeam("cpu", AI.buildTeam(CREATURES, d.team), 1, Object.keys(CONFIG.ultimates)[Math.floor(Math.random() * 3)]),
     score: { player: 0, cpu: 0 },
     serving: Math.random() < 0.5 ? "player" : "cpu",
     pending: null, armed: null, freeOn: false, ultArmed: false,
@@ -297,7 +298,7 @@ function buildCourt() {
       // face the net: player team looks right, CPU team looks left
       const facesLeft = (c.faces || "left") === "left";
       el.className = `crt ${side}` + ((side === "player") === facesLeft ? " flip" : "");
-      el.innerHTML = `<div class="badge-fx"></div><div class="shadow"></div><div class="jumper"><div class="bob"><img src="${spriteSrc(c.img)}" alt="${c.name}"></div></div><div class="tag">${rankHTML(c)} ${c.name}</div>`;
+      el.innerHTML = `<div class="badge-fx"></div><div class="shadow"></div><div class="jumper"><div class="bob"><img src="${spriteSrc(c.img)}" alt="${c.name}"></div></div><div class="tag">${c.name}</div>`;
       const size = sizeOf(c);
       el.style.width = 7.5 * size + "%";
       const dim = SPRITE_DIM[c.img] || { w: 1, h: 1 };
@@ -345,8 +346,8 @@ function updateStatus() {
       el.classList.toggle("stampede", !!T.buffs.stampede);
       el.classList.toggle("poisoned", c.poison > 0);
       // a little pixel flame over the head shows buffs and poison (green glow only ever means "pass here")
-      const buffOn = (["deepRoots", "cactusCover", "leapBlock", "hornWall", "greatWall", "bubblePass", "slipstream"].includes(c.active.id) && !!T.buffs[c.active.id]);
-      const buffFlame = { hornWall: "flame_gold", greatWall: "flame_gold", bubblePass: "flame_tidal", slipstream: "flame_tidal" }[c.active.id] || "flame_seed";
+      const buffOn = (["deepRoots", "cactusCover", "leapBlock", "hornWall", "greatWall", "bubblePass", "slipstream", "splashGuard"].includes(c.active.id) && !!T.buffs[c.active.id]);
+      const buffFlame = { hornWall: "flame_gold", greatWall: "flame_gold", bubblePass: "flame_tidal", slipstream: "flame_tidal", splashGuard: "flame_tidal" }[c.active.id] || "flame_seed";
       const badge = c.burn > 0 ? "flame_fire" : c.poison > 0 ? "flame_toxic" : buffOn ? buffFlame : null;
       setBadge(el, badge);
       el.classList.toggle("recovering", !!c.recovering);
@@ -690,7 +691,7 @@ function abilityFx(side, team, pos) {
     case "eruption":
       playSprite("puff_fire", h.x, h.y + 4, { scale: fxScale() + 1 }); streaks(h.x, h.y + 6, "#ff7a1a", 12, 7); courtShake("s"); break;
     case "magmaSpit": playSprite("puff_fire", h.x, h.y + 4); streaks(h.x, h.y + 6, "#ff7a1a", 8, 5); break;
-    case "bubblePass": case "slipstream":
+    case "bubblePass": case "slipstream": case "splashGuard":
       playSprite("puff_tidal", f.x, f.y, { anchor: "bottom" }); ripple(f.x, f.y, "#4fc3ff", 12); Sound.play("water"); break;
     case "greatWall":
       playSprite("puff_gold", f.x, f.y - 8);
@@ -913,6 +914,7 @@ function refreshControls() {
   renderUltButton();
   $("freeToggle").classList.add("hidden");
   $("blockAlert").classList.add("hidden");
+  $("step").classList.remove("hidden");
   if (!p) return;
   if (M.armed) elOf.get(M.armed.c).classList.add("armed");
 
@@ -921,6 +923,7 @@ function refreshControls() {
     setStep("player", 0, "block");
     Rules.FRONT.forEach((bp) => elOf.get(M.player.at[bp]).classList.add("pick-block"));
     $("blockAlert").classList.remove("hidden");
+    $("step").classList.add("hidden");
     return;
   }
 
@@ -1212,6 +1215,17 @@ async function playRally() {
         incoming.pos = np;
         incoming.aim *= CONFIG.recoverCoverMult;
       }
+      if (incoming.kind === "spike") {
+        const weaker = Rules.splashGuard(T, incoming.pos, incoming.power);
+        if (weaker !== null) {
+          incoming.power = weaker;
+          const sp = feet(side, incoming.pos);
+          pop(side, incoming.pos, "Splash Guard!", "ability");
+          playSprite("puff_tidal", sp.x, sp.y, { anchor: "bottom" });
+          Sound.play("water");
+          updateStatus();
+        }
+      }
       setBallFx([]);
       // CPU fires Combo Star at the start of a possession
       if (side === "cpu" && Rules.ultReady(T) && T.ult === "comboStar" && Math.random() < 0.7) { Rules.useUlt(T); ultFx("cpu", "comboStar"); }
@@ -1357,8 +1371,8 @@ async function playRally() {
         // a real setter: clean, high, golden arc
         await flyBall(headPt(side, action.target), 720, 32, { trail: "spark" });
       } else if (asSet) {
-        // anyone else setting: low and wobbly
-        await flyBall(headPt(side, action.target), 680, 13, { wobble: 2.6 });
+        // anyone else setting: a plain low set
+        await flyBall(headPt(side, action.target), 620, 12);
       } else {
         await flyBall(headPt(side, action.target), 600, 18);
       }

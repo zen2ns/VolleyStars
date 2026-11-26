@@ -57,7 +57,7 @@ const CREATURES = [
     active: { id: "hornWall", name: "Horn Wall", text: "For this rally, its block chance is huge (front row only)." },
   },
   {
-    id: "ripplet", name: "Ripplet", looks: ["assets/creatures/ripplet.png"], faces: "right",
+    id: "ripplet", name: "Ripplet", looks: ["assets/creatures/ripplet.png"],
     classes: ["setter", "receiver"],
     rank: "C",
     str: 48, ctrl: 81, def: 57, per: 62,
@@ -159,5 +159,13 @@ const CREATURES = [
     str: 76, ctrl: 62, def: 53, per: 58,
     passive: { id: "kindling", name: "Kindling", text: "Its spikes are 10% stronger while momentum is on your side." },
     active: { id: "magmaSpit", name: "Magma Spit", text: "A scorching spike: whoever it's aimed at is Burned for this rally and the next two." },
+  },
+  {
+    id: "frillet", name: "Frillet", looks: ["assets/creatures/frillet.png"], faces: "right",
+    rank: "D",
+    classes: ["receiver"],
+    str: 45, ctrl: 55, def: 61, per: 59,
+    passive: { id: "frillyFins", name: "Frilly Fins", text: "Its passes are extra steady." },
+    active: { id: "splashGuard", name: "Splash Guard", text: "For this rally, the next spike hit into Frillet's row loses 25% of its power to a splash of water." },
   },
 ];
