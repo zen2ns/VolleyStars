@@ -700,11 +700,13 @@ function courtShake(size) {
 function flyBall(to, ms, arc, { wobble = 0, trail = null } = {}) {
   const token = matchToken;
   const from = { ...M.ball };
+  const ballEl = $("ball");
+  ballEl.dataset.flying = "1"; // the ball only spins while it's in the air
   return new Promise((resolve, reject) => {
     const start = performance.now();
     let frame = 0;
     function step(now) {
-      if (token !== matchToken) return reject(new Abort());
+      if (token !== matchToken) { delete ballEl.dataset.flying; return reject(new Abort()); }
       const t = Math.min(1, (now - start) / ms);
       const x = from.x + (to.x - from.x) * t + Math.sin(t * Math.PI * 5) * wobble * (1 - t);
       const y = from.y + (to.y - from.y) * t - Math.sin(Math.PI * t) * arc + Math.cos(t * Math.PI * 4) * wobble * 0.6 * Math.sin(Math.PI * t);
@@ -716,7 +718,7 @@ function flyBall(to, ms, arc, { wobble = 0, trail = null } = {}) {
       if (kinds.length && frame % 2 === 0) particle(x, y, kinds[(frame / 2) % kinds.length]);
       frame++;
       if (t < 1) requestAnimationFrame(step);
-      else { setBall(to); resolve(); }
+      else { setBall(to); delete ballEl.dataset.flying; resolve(); }
     }
     requestAnimationFrame(step);
   });

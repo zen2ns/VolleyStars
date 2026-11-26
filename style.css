@@ -239,7 +239,8 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 
 /* ---------- ball, pixel flame ring, particles ---------- */
 .ball { position: absolute; width: 4%; transform: translate(-50%, -50%); z-index: 9; pointer-events: none; }
-.ball img { width: 100%; display: block; animation: spin 2.6s linear infinite; }
+.ball img { width: 100%; display: block; animation: spin 2.6s linear infinite; animation-play-state: paused; }
+.ball[data-flying] img { animation-play-state: running; } /* spins only in the air */
 .ball-fx { display: none; }
 .ball-flames {
   position: absolute; z-index: 8; pointer-events: none; opacity: 0; transition: opacity 0.2s;
