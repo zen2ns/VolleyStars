@@ -344,7 +344,7 @@ function sizeOf(c) {
   const dim = SPRITE_DIM[c.img];
   const byArt = dim ? Rules.clamp(Math.max(dim.w, dim.h) / 140, 1, 1.9) : 1;
   const r = RANKS[c.rank] || RANKS.D;
-  return Math.max(r.minSize, byArt) * (r.sizeBoost || 1);
+  return Math.max(r.minSize, byArt) * (r.sizeBoost || 1) * (c.size || 1);
 }
 
 const elOf = new Map(); // creature instance -> its element on court

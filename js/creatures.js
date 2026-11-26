@@ -15,6 +15,7 @@
 //  The ability "id"s connect to code in js/rules.js, so change the names and
 //  descriptions freely, but keep the ids the same unless you ask for new abilities.
 //  "looks" is a list of pictures you can choose between on the team screen.
+//  "size": optional on-court size multiplier for small drawings (1 if left out).
 //  "faces": which way the drawing looks ("left" if left out). The game flips sprites so
 //  every creature faces the net.
 // =====================================================================
@@ -33,7 +34,7 @@ const RANKS = {
 
 const CREATURES = [
   {
-    id: "embake", name: "Embake", looks: ["assets/creatures/embake.png"],
+    id: "embake", name: "Embake", looks: ["assets/creatures/embake.png"], size: 0.8,
     classes: ["spiker"],
     rank: "D",
     str: 70, ctrl: 59, def: 45, per: 47,
@@ -169,7 +170,7 @@ const CREATURES = [
     active: { id: "splashGuard", name: "Splash Guard", text: "For this rally, the next spike hit into Frillet's row loses 25% of its power to a splash of water." },
   },
   {
-    id: "malull", name: "Malull", looks: ["assets/creatures/malull.png"],
+    id: "malull", name: "Malull", looks: ["assets/creatures/malull.png"], size: 0.72,
     rank: "D",
     classes: ["receiver"],
     str: 44, ctrl: 50, def: 69, per: 58,
@@ -209,7 +210,7 @@ const CREATURES = [
     active: { id: "thunderSet", name: "Thunder Set", text: "A perfect, lightning-fast set: the next spike gets +25% power and can't be blocked." },
   },
   {
-    id: "stook", name: "Stook", looks: ["assets/creatures/stook.png"],
+    id: "stook", name: "Stook", looks: ["assets/creatures/stook.png"], size: 0.8,
     rank: "D",
     classes: ["setter"],
     str: 61, ctrl: 63, def: 44, per: 52,
