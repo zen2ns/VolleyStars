@@ -46,7 +46,7 @@ const CONFIG = {
 
   // Timing bar results (spikes and hard serves)
   timing: {
-    perfect: { power: 1.2,  out: 0,    serveOut: 0.02, combo: 2, label: "PERFECT!" },
+    perfect: { power: 1.2,  out: 0,    serveOut: 0,    combo: 2, label: "PERFECT!" }, // a perfect never goes out
     good:    { power: 1.1,  out: 0,    serveOut: 0.06, combo: 1, label: "Good hit" },
     ok:      { power: 1.0,  out: 0.02, serveOut: 0.14, combo: 0, label: "Okay hit" },
     poor:    { power: 0.85, out: 0.10, serveOut: 0.35, combo: 0, label: "Mistimed" },
@@ -203,7 +203,7 @@ Rules.serve = (team, type, timing = "ok") => {
     return { power: Rules.eff(team, s, "str") * 0.45 + 15 + Rules.rand(0, 10) };
   }
   const t = CONFIG.timing[timing];
-  const outChance = t.serveOut + (100 - Rules.eff(team, s, "ctrl")) * 0.001;
+  const outChance = timing === "perfect" ? 0 : t.serveOut + (100 - Rules.eff(team, s, "ctrl")) * 0.001; // perfect never goes out
   if (Math.random() < outChance) return { fault: true };
   return { power: (Rules.eff(team, s, "str") * 0.85 + Rules.rand(0, 15)) * t.power };
 };
@@ -408,7 +408,8 @@ Rules.spike = (atk, fromPos, inQ, def, targetPos, timing, special, combo = 0) =>
   c.winded = c.passive.id === "magmaVeins" ? 0 : 2; // weaker through the end of the next rally
 
   const a = Rules.aim(atk.side, fromPos, def.side, targetPos);
-  if (Math.random() < Rules.spikeOutChance(atk, fromPos, inQ, a.risk, timing) * (atk.nuke ? 0.5 : 1)) {
+  // a PERFECT on the timing bar never goes out
+  if (timing !== "perfect" && Math.random() < Rules.spikeOutChance(atk, fromPos, inQ, a.risk, timing) * (atk.nuke ? 0.5 : 1)) {
     return { out: true, power, aimMult: a.aimMult, passives };
   }
   const spooked = !!atk.buffs.spooked;
