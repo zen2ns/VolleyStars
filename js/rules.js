@@ -519,8 +519,9 @@ AI.chooseBlocker = (def, atk, spikerPos, smart) => {
 };
 
 // Ultimate meter
-Rules.ultReady = (team) => team.ultCharge >= CONFIG.ultMax;
-Rules.chargeUlt = (team, n) => { if (n > 0) team.ultCharge = Math.min(CONFIG.ultMax, team.ultCharge + n); };
+// team.ult can be null (no ultimate unlocked yet): then the meter never charges
+Rules.ultReady = (team) => !!team.ult && team.ultCharge >= CONFIG.ultMax;
+Rules.chargeUlt = (team, n) => { if (n > 0 && team.ult) team.ultCharge = Math.min(CONFIG.ultMax, team.ultCharge + n); };
 Rules.useUlt = (team) => {
   team.ultCharge = 0;
   if (team.ult === "comboStar") team.buffs.comboStar = true;

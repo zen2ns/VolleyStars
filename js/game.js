@@ -66,6 +66,7 @@ try {
 } catch (e) { /* no saved team */ }
 
 function saveTeam() {
+  if (builder.mode === "story") { Story.saveTeam(builder.slots, builder.looks, builder.ult); return; }
   try {
     localStorage.setItem("volleystars-team-v2", JSON.stringify({
       slots: builder.slots, looks: builder.looks, difficulty: $("difficulty").value, ult: builder.ult,
@@ -109,18 +110,43 @@ Promise.all(CREATURES.flatMap((c) => c.looks).map(trimSprite)).then(() => { if (
 
 const lookOf = (c) => spriteSrc(c.looks[builder.looks[c.id] || 0] || c.looks[0]);
 const placedPos = (id) => Rules.POSITIONS.find((p) => builder.slots[p] === id);
+const usedCount = (id) => Rules.POSITIONS.filter((p) => builder.slots[p] === id).length;
+const storyLimit = (id) => (builder.mode === "story" ? Story.owned(id) : Infinity);
+
+// Open the team builder for "free" play or a "story" battle ({ region, battle }).
+// Free play and story each remember their own last team.
+function enterBuilder(mode, opts = {}) {
+  if (builder.mode !== "story") builder._free = { slots: { ...builder.slots }, looks: { ...builder.looks }, ult: builder.ult };
+  builder.mode = mode;
+  builder.selected = null;
+  if (mode === "story") {
+    builder.region = opts.region;
+    builder.battle = opts.battle;
+    const t = Story.team();
+    builder.slots = t.slots; builder.looks = t.looks; builder.ult = t.ult;
+    // drop anything you no longer have enough copies of
+    Rules.POSITIONS.forEach((p) => { const id = builder.slots[p]; if (id && usedCount(id) > Story.owned(id)) builder.slots[p] = null; });
+  } else if (builder._free) {
+    builder.slots = builder._free.slots; builder.looks = builder._free.looks; builder.ult = builder._free.ult || "nuclear";
+  }
+  setupOpponent();
+  renderBuilder();
+  showScreen("builder");
+}
 
 function renderRoster() {
   const roster = $("roster");
   roster.innerHTML = "";
   const order = "SABCD";
-  [...CREATURES].sort((a, b) => order.indexOf(a.rank) - order.indexOf(b.rank)).forEach((c) => {
+  const list = builder.mode === "story" ? CREATURES.filter((c) => Story.owned(c.id) > 0) : CREATURES;
+  [...list].sort((a, b) => order.indexOf(a.rank) - order.indexOf(b.rank)).forEach((c) => {
     const card = document.createElement("div");
-    const count = Rules.POSITIONS.filter((p) => builder.slots[p] === c.id).length;
+    const count = usedCount(c.id);
     card.className = "card" + (builder.selected === c.id ? " selected" : "");
     card.innerHTML = `
       ${c.looks.length > 1 ? '<button class="look-btn" title="Change look">Look ⇄</button>' : ""}
-      ${count ? `<span class="on-team">×${count}</span>` : ""}
+      ${builder.mode === "story" ? `<span class="on-team${count >= Story.owned(c.id) ? " full" : ""}">${count} / ${Story.owned(c.id)}</span>`
+        : count ? `<span class="on-team">×${count}</span>` : ""}
       <img src="${lookOf(c)}" alt="${c.name}">
       <div class="name">${rankHTML(c)} ${c.name}</div>
       ${badgesHTML(c)}
@@ -165,6 +191,11 @@ function renderBuilderGrid() {
     cell.addEventListener("click", () => {
       tip.classList.add("hidden");
       if (builder.selected) {
+        if (builder.slots[p] !== builder.selected && usedCount(builder.selected) >= storyLimit(builder.selected)) {
+          $("builderMsg").textContent = `You only have ${Story.owned(builder.selected)} ${byId(builder.selected).name}. Recruit more in Story battles!`;
+          Sound.play("miss");
+          return;
+        }
         builder.slots[p] = builder.selected; // stays selected so you can place copies
         Sound.play("click");
       } else if (id) {
@@ -182,7 +213,16 @@ function renderBuilderGrid() {
 function renderUltPick() {
   const box = $("ultPick");
   box.innerHTML = "";
-  Object.entries(CONFIG.ultimates).forEach(([id, u]) => {
+  let ids = Object.keys(CONFIG.ultimates);
+  if (builder.mode === "story") {
+    ids = Story.ults();
+    if (!ids.includes(builder.ult)) builder.ult = ids[0] || null;
+    if (!ids.length) {
+      box.innerHTML = '<p class="muted small ult-none">No ultimates yet. Win a Regional Championship to unlock one!</p>';
+      return;
+    }
+  }
+  ids.map((id) => [id, CONFIG.ultimates[id]]).forEach(([id, u]) => {
     const b = document.createElement("button");
     b.className = "ult-card" + (builder.ult === id ? " on" : "");
     b.innerHTML = `<b>${u.name}</b><span>${u.text}</span>`;
@@ -194,9 +234,13 @@ function renderUltPick() {
 // ---------- opponent (path checkpoint or random CPU team) ----------
 const DIFF_NAME = { easy: "Easy", normal: "Medium", hard: "Hard" };
 function setupOpponent() {
-  if (builder.mode === "path") {
-    const st = STAGES[builder.stage];
-    builder.opp = { team: { ...st.team }, looks: {}, ult: st.ult, smart: st.smart, timing: st.timing, name: st.name, tagline: st.tagline };
+  if (builder.mode === "story") {
+    const reg = REGIONS[builder.region], bt = reg.battles[builder.battle];
+    const sk = storySkill(builder.region, builder.battle);
+    builder.opp = {
+      team: { ...bt.team }, looks: {}, ult: bt.ult, smart: sk.smart, timing: sk.timing,
+      name: bt.name, tagline: `${reg.name} · ${bt.champion ? "Regional Championship" : `Battle ${builder.battle + 1} of 5`}`,
+    };
     return;
   }
   const diff = $("difficulty").value, d = CONFIG.difficulty[diff];
@@ -228,17 +272,20 @@ function renderOpponent() {
     grid.appendChild(cell);
   });
   const skill = o.smart >= 0.6 ? "Hard" : o.smart >= 0.2 ? "Medium" : "Easy";
-  $("oppInfo").innerHTML = `Ultimate: <b>${CONFIG.ultimates[o.ult].name}</b> · CPU skill: <b>${skill}</b>`;
+  $("oppInfo").innerHTML = `Ultimate: <b>${o.ult ? CONFIG.ultimates[o.ult].name : "None"}</b> · CPU skill: <b>${skill}</b>`;
 }
 
 function renderBuilder() {
   renderUltPick();
   renderOpponent();
-  const path = builder.mode === "path";
-  $("builderTitle").textContent = path ? `Checkpoint ${builder.stage + 1}: ${STAGES[builder.stage].name}` : "Free Play";
+  const path = builder.mode === "story";
+  $("builderTitle").textContent = path
+    ? `${REGIONS[builder.region].name}: ${REGIONS[builder.region].battles[builder.battle].champion ? "🏆 Championship" : `Battle ${builder.battle + 1}`}`
+    : "Free Play";
   $("diffLabel").classList.toggle("hidden", path);
   $("oppReroll").classList.toggle("hidden", path);
   $("startMatch").textContent = path ? "Challenge!" : "Start match";
+  $("randomTeam").classList.toggle("hidden", path);
   const count = Rules.POSITIONS.filter((p) => builder.slots[p]).length;
   renderRoster();
   renderBuilderGrid();
@@ -314,7 +361,7 @@ function startMatch() {
   });
   matchToken++;
   M = {
-    diff, smart: o.smart, timingSkill: o.timing, mode: builder.mode, stage: builder.stage,
+    diff, smart: o.smart, timingSkill: o.timing, mode: builder.mode, region: builder.region, battle: builder.battle,
     player: Rules.makeTeam("player", at, 1, builder.ult),
     cpu: Rules.makeTeam("cpu", cpuAt, 1, o.ult),
     score: { player: 0, cpu: 0 },
@@ -821,6 +868,8 @@ function updateUltHUD() {
   if (!M) return;
   [["player", "Player"], ["cpu", "Cpu"]].forEach(([side, k]) => {
     const T = teamOf(side);
+    $("ultFill" + k).parentElement.parentElement.style.visibility = T.ult ? "visible" : "hidden";
+    if (!T.ult) return;
     $("ultName" + k).textContent = CONFIG.ultimates[T.ult].name.toUpperCase() + (T.buffs.comboStar && T.ult === "comboStar" || T.buffs.fortress && T.ult === "fortress" ? " · ACTIVE" : "");
     $("ultFill" + k).style.width = (T.ultCharge / CONFIG.ultMax) * 100 + "%";
     $("ultFill" + k).parentElement.parentElement.classList.toggle("full", Rules.ultReady(T));
@@ -1188,7 +1237,7 @@ async function matchLoop(token) {
       await showBanner(winner === "player" ? "POINT!" : "CPU POINT", reason + (sideOut && !over ? " · Side out, rotate!" : ""), winner !== "player");
       if (over) {
         if (a > b) Sound.play("win");
-        if (M.mode === "path") { showPathEnd(a > b); return; }
+        if (M.mode === "story") { showStoryEnd(a > b); return; }
         $("playAgain").textContent = "Back to team select";
         $("endSecond").textContent = "Main menu";
         endAction = { first: backToBuilder, second: () => { backToBuilder(); showScreen("menu"); } };
@@ -1600,19 +1649,6 @@ function backToBuilder() {
 }
 window.addEventListener("resize", () => { if (M) { $("court").style.setProperty("--px", fxScale() + "px"); updateFlames(); } });
 let endAction = { first: () => backToBuilder(), second: () => { backToBuilder(); showScreen("menu"); } };
-function showPathEnd(won) {
-  const st = STAGES[M.stage];
-  if (won) Progress.beat(M.stage);
-  const last = M.stage === STAGES.length - 1;
-  $("endTitle").textContent = won ? (last ? "You conquered the Path! 🏆" : "Checkpoint cleared!") : "Defeated…";
-  $("endScore").textContent = `${st.name}: ${M.score.player} – ${M.score.cpu}` + (won && !last ? " · Next checkpoint unlocked!" : "");
-  $("playAgain").textContent = won ? "Back to the Path" : "Try again";
-  $("endSecond").textContent = won ? "Main menu" : "Back to the Path";
-  endAction = won
-    ? { first: () => { backToBuilder(); showScreen("path"); }, second: () => { backToBuilder(); showScreen("menu"); } }
-    : { first: () => backToBuilder(), second: () => { backToBuilder(); showScreen("path"); } };
-  $("endOverlay").classList.remove("hidden");
-}
 $("quitMatch").addEventListener("click", backToBuilder);
 $("playAgain").addEventListener("click", () => endAction.first());
 $("endSecond").addEventListener("click", () => endAction.second());

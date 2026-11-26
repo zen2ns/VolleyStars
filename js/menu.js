@@ -2,11 +2,11 @@
 //  VolleyStars main menu, the Path, and Settings.
 // =====================================================================
 
-const SCREENS = ["menu", "path", "settings", "builder", "match"];
+const SCREENS = ["menu", "story", "settings", "builder", "match"];
 function showScreen(id) {
   SCREENS.forEach((s) => $(s).classList.toggle("hidden", s !== id));
   tip.classList.add("hidden");
-  if (id === "path") renderPath();
+  if (id === "story") renderStory();
   if (id === "settings") renderSettings();
   Parade.active(id === "menu");
 }
@@ -32,7 +32,7 @@ function renderSettings() {
   $("setMusic").value = s.music; $("setMusicVal").textContent = s.music + "%";
   $("setPoints").value = String(s.points);
   $("resetMsg").textContent = "";
-  $("resetPath").textContent = "Reset path progress";
+  $("resetPath").textContent = "Reset story progress";
   resetArmed = false;
 }
 $("setSfx").addEventListener("input", (e) => { Settings.set("sfx", +e.target.value); $("setSfxVal").textContent = e.target.value + "%"; });
@@ -42,83 +42,17 @@ $("setPoints").addEventListener("change", (e) => { Settings.set("points", +e.tar
 let resetArmed = false;
 $("resetPath").addEventListener("click", () => {
   if (!resetArmed) { resetArmed = true; $("resetPath").textContent = "Click again to confirm"; return; }
-  Progress.reset();
+  Story.reset();
   resetArmed = false;
-  $("resetPath").textContent = "Reset path progress";
-  $("resetMsg").textContent = "Path progress reset.";
+  $("resetPath").textContent = "Reset story progress";
+  $("resetMsg").textContent = "Story reset.";
 });
-
-// ---------- path progress ----------
-const Progress = (() => {
-  let beaten = 0; // how many checkpoints are cleared (in order)
-  try { beaten = +(JSON.parse(localStorage.getItem("volleystars-path") || "{}").beaten || 0); } catch (e) {}
-  const save = () => { try { localStorage.setItem("volleystars-path", JSON.stringify({ beaten })); } catch (e) {} };
-  return {
-    beaten: () => beaten,
-    beat: (i) => { if (i + 1 > beaten) { beaten = i + 1; save(); } },
-    reset: () => { beaten = 0; save(); },
-  };
-})();
-
-function renderPath() {
-  const map = $("pathMap");
-  map.innerHTML = "";
-  const n = STAGES.length;
-  // a winding dotted trail behind the checkpoints
-  const pts = STAGES.map((_, i) => ({ x: 8 + (i * 84) / (n - 1), y: i % 2 ? 66 : 34 }));
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 100 100");
-  svg.setAttribute("preserveAspectRatio", "none");
-  svg.classList.add("path-trail");
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 1; i < n; i++) {
-    const a = pts[i - 1], b = pts[i];
-    d += ` C ${(a.x + b.x) / 2} ${a.y}, ${(a.x + b.x) / 2} ${b.y}, ${b.x} ${b.y}`;
-  }
-  svg.innerHTML = `<path d="${d}" class="trail-bg"/><path d="${d}" class="trail-fg" style="--done:${Math.min(1, Progress.beaten() / (n - 1))}"/>`;
-  map.appendChild(svg);
-
-  STAGES.forEach((st, i) => {
-    const state = i < Progress.beaten() ? "done" : i === Progress.beaten() ? "open" : "locked";
-    const node = document.createElement("button");
-    node.className = `path-node ${state}`;
-    node.style.left = pts[i].x + "%";
-    node.style.top = pts[i].y + "%";
-    const sprites = [...new Set(Object.values(st.team))].slice(0, 4)
-      .map((id) => `<img src="${spriteSrc(byId(id).looks[0])}" alt="">`).join("");
-    node.innerHTML = `
-      <div class="pn-num">${state === "done" ? "✓" : state === "locked" ? "🔒" : i + 1}</div>
-      <div class="pn-card">
-        <div class="pn-title">Checkpoint ${i + 1}</div>
-        <div class="pn-name">${st.name}</div>
-        <div class="pn-team">${state === "locked" ? '<span class="muted small">Locked</span>' : sprites}</div>
-      </div>`;
-    node.disabled = state === "locked";
-    node.addEventListener("click", () => {
-      Sound.play("click");
-      builder.mode = "path";
-      builder.stage = i;
-      builder.selected = null;
-      setupOpponent();
-      renderBuilder();
-      showScreen("builder");
-    });
-    map.appendChild(node);
-  });
-}
 
 // ---------- menu buttons ----------
-$("menuFree").addEventListener("click", () => {
-  Sound.play("click");
-  builder.mode = "free";
-  builder.selected = null;
-  setupOpponent();
-  renderBuilder();
-  showScreen("builder");
-});
-$("menuPath").addEventListener("click", () => { Sound.play("click"); showScreen("path"); });
+$("menuFree").addEventListener("click", () => { Sound.play("click"); enterBuilder("free"); });
+$("menuStory").addEventListener("click", () => { Sound.play("click"); showScreen("story"); });
 $("menuSettings").addEventListener("click", () => { Sound.play("click"); showScreen("settings"); });
-$("builderBack").addEventListener("click", () => { Sound.play("click"); showScreen(builder.mode === "path" ? "path" : "menu"); });
+$("builderBack").addEventListener("click", () => { Sound.play("click"); showScreen(builder.mode === "story" ? "story" : "menu"); });
 
 // ---------- the parade: creatures run across the bottom of the menu ----------
 const Parade = (() => {

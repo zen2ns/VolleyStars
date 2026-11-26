@@ -20,22 +20,27 @@
       </div>
       <div class="menu-buttons">
         <button id="menuFree" class="menu-btn"><b>Free Play</b><span>Build any team, pick a difficulty</span></button>
-        <button id="menuPath" class="menu-btn gold"><b>The Path</b><span>Beat 5 checkpoint teams in a row</span></button>
+        <button id="menuStory" class="menu-btn gold"><b>Story</b><span>Recruit creatures and conquer 5 regions</span></button>
         <button id="menuSettings" class="menu-btn"><b>Settings</b><span>Sound and game options</span></button>
       </div>
       <p class="menu-hint">Tip: click a creature running by!</p>
     </div>
   </section>
 
-  <!-- ================= PATH ================= -->
-  <section id="path" class="screen hidden">
+  <!-- ================= STORY ================= -->
+  <section id="story" class="screen hidden story-screen">
     <div class="screen-head">
       <button class="btn secondary back-btn" data-go="menu">◂ Menu</button>
-      <h1>The Path</h1>
+      <h1>Story</h1>
       <span></span>
     </div>
-    <p class="muted center">Beat each checkpoint to unlock the next. Click an open checkpoint to build your team.</p>
-    <div id="pathMap" class="path-map"></div>
+    <div id="regionTabs" class="region-tabs"></div>
+    <div class="region-head"><h2 id="regionName"></h2><span id="regionBlurb" class="muted"></span></div>
+    <div id="storyMap" class="path-map story-map"></div>
+    <div class="panel collection-panel">
+      <div class="col-head"><h2>Your creatures</h2><span id="storyUlts" class="small"></span></div>
+      <div id="collection" class="collection"></div>
+    </div>
   </section>
 
   <!-- ================= SETTINGS ================= -->
@@ -50,7 +55,8 @@
       <label class="set-row"><span>Music volume</span><input id="setMusic" type="range" min="0" max="100"><b id="setMusicVal"></b></label>
       <label class="set-row"><span>Points per game</span>
         <select id="setPoints"><option value="7">First to 7</option><option value="11">First to 11</option><option value="15">First to 15</option><option value="25">First to 25</option></select><b></b></label>
-      <div class="set-row"><span>Path progress</span><button id="resetPath" class="btn secondary">Reset path progress</button><b id="resetMsg"></b></div>
+      <div class="set-row"><span>Story save</span><button id="resetPath" class="btn secondary">Reset story progress</button><b id="resetMsg"></b></div>
+      <p class="muted small">Your story progress, creatures and last team save automatically in this browser.</p>
     </div>
   </section>
 
@@ -65,7 +71,7 @@
     <div class="builder-layout">
       <div class="panel">
         <h2>Pick your team <span class="muted">(6)</span></h2>
-        <p class="muted small">Click a creature, then click spots on your court to place it (you can use the same creature more than once).
+        <p class="muted small">Click a creature, then click spots on your court to place it (you can use the same creature more than once; in Story, up to as many copies as you own).
           Click a placed creature with nothing selected to take it off. Hover a creature to see its abilities.</p>
         <div id="roster" class="roster"></div>
       </div>
@@ -207,13 +213,31 @@
     </div>
   </div>
 
+  <!-- ================= RECRUIT DRAFT ================= -->
+  <div id="draft" class="overlay hidden">
+    <div class="overlay-box draft-box">
+      <h2 id="draftTitle">Recruit Draft</h2>
+      <p id="draftSub" class="muted"></p>
+      <div id="draftCards" class="draft-cards"></div>
+    </div>
+  </div>
+  <div id="ultUnlock" class="overlay hidden">
+    <div class="overlay-box draft-box">
+      <h2>Unlock an Ultimate!</h2>
+      <p class="muted">Champions earn power. Choose one ultimate to add to your team.</p>
+      <div id="ultUnlockCards" class="ult-pick unlock"></div>
+    </div>
+  </div>
+
   <div id="tooltip" class="tooltip hidden"></div>
 
   <script src="js/sound.js"></script>
   <script src="js/creatures.js"></script>
-  <script src="js/stages.js"></script>
+  <script src="js/story.js"></script>
+  <script src="js/save.js"></script>
   <script src="js/rules.js"></script>
   <script src="js/game.js"></script>
+  <script src="js/storymode.js"></script>
   <script src="js/menu.js"></script>
 </body>
 </html>

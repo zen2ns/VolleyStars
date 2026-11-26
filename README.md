@@ -36,6 +36,10 @@ A turn-based creature volleyball game that runs in the browser.
 - SFX / MUSIC buttons at the top turn sound on and off (all sounds are made in `js/sound.js`, no audio files).
 
 ## Modes
-- **Free Play**: build any team (repeats allowed) vs a random CPU team you can preview and reroll.
-- **The Path**: beat 5 themed checkpoint teams in order. Progress is saved in your browser.
-- **Settings**: sound effect and music volume, points per game, reset Path progress.
+- **Free Play**: sandbox. Every creature, unlimited copies, random CPU team you can preview and reroll.
+- **Story**: 5 regions x 5 battles (battle 5 = Regional Championship). Start with 2 Moofle, 2 Frillet, 1 Snumpkin,
+  1 Toxipine. After each win, the **Recruit Draft** offers 3 creatures from the team you beat (sometimes a rare
+  wildcard); each pick adds a copy. You can only field as many copies as you own. Championships give a premium
+  draft, unlock the next region, and (regions 1-3) let you unlock an ultimate. Everything autosaves in the browser.
+  Story teams and settings: `js/story.js`. Save logic: `js/save.js`. Screens: `js/storymode.js`.
+- **Settings**: sound effect and music volume, points per game, reset story progress.
