@@ -60,13 +60,13 @@
       <div class="hud-mid">
         <div id="step" class="step">GET READY</div>
         <div class="hud-sub">
+          <div class="hud-left">
+            <button id="ultBtn" class="ult-btn hidden"></button>
+          </div>
           <div class="momentum-wrap"><span class="m-label you">YOU</span>
             <div id="power" class="momentum" title="Momentum: good plays swing it your way and power up your spikes"><div id="mFill" class="m-fill"></div><div class="m-center"></div></div>
             <span class="m-label cpu">CPU</span></div>
-          <button id="freeToggle" class="btn toggle tiny hidden">Free ball instead</button>
-          <button id="ultBtn" class="ult-btn hidden"></button>
-          <button id="sfxBtn" class="btn toggle tiny on" title="Sound effects">SFX</button>
-          <button id="musicBtn" class="btn toggle tiny on" title="Music">MUSIC</button>
+          <div class="hud-right"><button id="freeToggle" class="btn toggle tiny hidden">Free ball instead</button></div>
         </div>
       </div>
       <div class="score-box cpu">
@@ -125,7 +125,11 @@
 
     <div class="under">
       <div id="log" class="log"></div>
-      <button id="quitMatch" class="btn secondary small-btn">Quit to team select</button>
+      <div class="under-buttons">
+        <button id="sfxBtn" class="btn toggle tiny on" title="Sound effects">SFX</button>
+        <button id="musicBtn" class="btn toggle tiny on" title="Music">MUSIC</button>
+        <button id="quitMatch" class="btn secondary small-btn">Quit to team select</button>
+      </div>
     </div>
   </section>
 

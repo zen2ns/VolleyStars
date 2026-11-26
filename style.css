@@ -117,7 +117,14 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .step .w-sneaky { color: #7be07b; }
 .step.cpu-turn { opacity: 0.85; }
 .step.cpu-turn .who { color: var(--opp); }
-.hud-sub { display: flex; justify-content: center; align-items: center; gap: 0.6rem; min-height: 22px; }
+/* momentum bar sits dead center (over the net); your buttons go on your side */
+.hud-mid { min-width: min(760px, 58vw); }
+.hud-sub { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 0.6rem; min-height: 26px; }
+.hud-left, .hud-right { white-space: nowrap; }
+.hud-left { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.hud-right { display: flex; justify-content: flex-start; gap: 0.5rem; }
+.under-buttons { display: flex; justify-content: center; align-items: center; gap: 0.6rem; margin-top: 0.6rem; }
+.under-buttons .small-btn { margin: 0; }
 .momentum-wrap { display: flex; align-items: center; gap: 6px; }
 .m-label { font-size: 0.8rem; font-weight: bold; letter-spacing: 1px; }
 .m-label.you { color: #7ab8ff; }
@@ -398,9 +405,9 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
   position: absolute; left: 50%; top: 1.5%; transform: translateX(-50%); z-index: 13;
   display: flex; align-items: center; gap: 0.7rem; white-space: nowrap;
   background: #0b1a33f0; border: 3px solid #4fa3ff; border-radius: 12px; padding: 0.35rem 0.9rem;
-  animation: alertFlash 0.7s ease-in-out infinite;
+  box-shadow: 0 0 10px #4fa3ff; animation: alertFlash 0.6s ease-out 1;
 }
-@keyframes alertFlash { 0%, 100% { box-shadow: 0 0 6px #4fa3ff; border-color: #4fa3ff; } 50% { box-shadow: 0 0 24px #7ad8ff; border-color: #ffffff; } }
+@keyframes alertFlash { 0% { box-shadow: 0 0 6px #4fa3ff; } 40% { box-shadow: 0 0 26px #7ad8ff; background: #1f4a8af0; } 100% { box-shadow: 0 0 10px #4fa3ff; } }
 .ba-title { font-weight: 900; font-size: clamp(1rem, 2.4vw, 1.6rem); color: #bfeaff; letter-spacing: 2px; text-shadow: 2px 2px 0 #000; }
 .ba-text { font-size: clamp(0.65rem, 1.2vw, 0.85rem); color: var(--text); }
 .ba-btn {
@@ -408,3 +415,11 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
   background: #1f63c9; color: #fff; border: 2px solid #bfeaff; border-radius: 999px; padding: 3px 12px;
 }
 .ba-btn:hover { background: #2f7cf0; }
+
+/* rank letter badges */
+.rk {
+  display: inline-block; min-width: 1.3em; text-align: center; font-weight: 900; font-style: normal;
+  color: #111; background: var(--rk); border-radius: 4px; padding: 0 3px; font-size: 0.85em; line-height: 1.25;
+}
+.rk-S { box-shadow: 0 0 6px var(--rk); }
+.card .name .rk { margin-right: 2px; }

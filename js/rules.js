@@ -91,6 +91,13 @@ Rules.rotate = (team) => {
 };
 
 Rules.has = (c, cls) => c.classes.includes(cls);
+// Poison / Burn a creature (Thick Hide is immune). Returns true if it stuck.
+Rules.afflict = (c, kind, rallies = 3) => {
+  if (c.passive.id === "thickHide") return false;
+  c[kind] = rallies;
+  return true;
+};
+Rules.isAfflicted = (c) => c.poison > 0 || c.burn > 0;
 Rules.eff = (team, c, stat) => c[stat] * team.mult;
 
 Rules.makeInstance = (base, lookIndex = 0) => ({
@@ -102,6 +109,7 @@ Rules.makeInstance = (base, lookIndex = 0) => ({
   spikes: 0,        // spikes this game (for Heating Up)
   read: 0,          // Adapting: goes up when spiked at, fades each rally
   poison: 0,        // Poisoned: rallies left of digging/passing worse
+  burn: 0,          // Burned: same effect as poison, from lava abilities
   recovering: false,// blocked and is getting back into position: can't play the next possession
 });
 
@@ -127,6 +135,7 @@ Rules.endRally = (team) => {
     if (c.winded > 0) c.winded--;
     if (c.read > 0) c.read--;
     if (c.poison > 0) c.poison--;
+    if (c.burn > 0) c.burn--;
   });
   team.buffs = {};
   team.blockerPos = null;
@@ -141,6 +150,8 @@ Rules.abilityReady = (team, pos, ctx) => {
   const holding = ctx.holderPos === pos && !ctx.serve;
   switch (c.active.id) {
     case "fireball":
+    case "eruption":
+    case "magmaSpit":
     case "venomSpike":
     case "shadowStrike": return holding && ctx.canSpike;
     case "lanternSet":
@@ -151,10 +162,13 @@ Rules.abilityReady = (team, pos, ctx) => {
     case "stampede":     return !team.buffs.stampede;
     case "cactusCover":  return !team.buffs.cactusCover;
     case "leapBlock":    return Rules.isFront(pos) && !team.buffs.leapBlock;
+    case "greatWall":    return Rules.isFront(pos) && !team.buffs.greatWall;
+    case "bubblePass":   return !team.buffs.bubblePass;
+    case "slipstream":   return !team.buffs.slipstream;
   }
   return false;
 };
-Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede", "cactusCover", "leapBlock"];
+Rules.BUFF_ABILITIES = ["hornWall", "deepRoots", "stampede", "cactusCover", "leapBlock", "greatWall", "bubblePass", "slipstream"];
 
 // Cactus Cover: a spike aimed at a teammate next to Desacti gets dug by Desacti instead
 Rules.coverPos = (team, pos, kind) => {
@@ -197,7 +211,8 @@ function receiveSkill(team, pos, kind) {
   if (c.passive.id === "rooted" && !Rules.isFront(pos) && kind === "spike") { skill *= 1.15; rooted = true; }
   if (team.buffs.stampede) skill *= 1.15;
   if (kind === "spike" && team.buffs.allBack) skill *= CONFIG.noBlockDigBonus;
-  if (c.poison > 0) skill *= 0.72; // Poisoned
+  if (Rules.isAfflicted(c)) skill *= 0.72; // Poisoned or Burned
+  if (c.passive.id === "slippery" && kind !== "spike") skill *= 1.1;
   const adapting = kind === "spike" && c.read > 0;
   if (adapting) skill *= 1 + CONFIG.adaptPerLevel * c.read;
   const cls = Rules.has(c, "receiver") ? CONFIG.classBonus : CONFIG.classPenalty;
@@ -212,12 +227,18 @@ Rules.receive = (team, pos, power, kind, aimMult = 1) => {
   const passives = [];
   if (kind === "spike" && c.active.id === "deepRoots" && team.buffs.deepRoots) {
     team.buffs.deepRoots = false;
-    return { quality: 95, ability: "Deep Roots!", passives };
+    return { quality: 95, ability: c.active.name + "!", passives };
+  }
+  if (c.active.id === "bubblePass" && team.buffs.bubblePass) {
+    team.buffs.bubblePass = false;
+    return { quality: 92, ability: "Bubble Pass!", passives };
   }
   const r = receiveSkill(team, pos, kind);
   if (kind === "spike") c.read = Math.min(3, c.read + 1); // reads the next one better
   if (r.adapting) passives.push("Adapting");
   if (c.poison > 0) passives.push("Poisoned…");
+  if (c.burn > 0) passives.push("Burned…");
+  if (c.passive.id === "slippery" && kind !== "spike") passives.push("Slippery");
   if (r.rooted) passives.push("Rooted");
   if (c.passive.id === "steadyHooves") passives.push("Steady Hooves");
   const quality = CONFIG.receiveBase + (r.skill * aimMult - power) + Rules.rand(-r.spread, r.spread);
@@ -252,8 +273,12 @@ function farPenalty(team, c, from, to) {
 // Touch 1 -> 2: a bump to a teammate (usually the setter)
 Rules.bump = (team, from, to, inQ) => {
   const c = team.at[from];
+  if (c.active.id === "bubblePass" && team.buffs.bubblePass) {
+    team.buffs.bubblePass = false;
+    return { quality: 92, passives: ["Bubble Pass!"] };
+  }
   const spread = c.passive.id === "steadyHooves" ? 5 : 10;
-  const poisoned = c.poison > 0 ? 12 : 0;
+  const poisoned = Rules.isAfflicted(c) ? 12 : 0;
   const q = inQ * 0.55 + Rules.eff(team, c, "ctrl") * 0.45 - poisoned - farPenalty(team, c, from, to) + Rules.rand(-spread, spread);
   return { quality: Rules.clamp(q, 0, 100), error: q < CONFIG.errorBelow, passives: spread === 5 ? ["Steady Hooves"] : [] };
 };
@@ -308,7 +333,10 @@ Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
   if (!Rules.isFront(fromPos)) power *= CONFIG.backRowSpikeMult;
   if (c.winded > 0) power *= CONFIG.windedMult;
   if (special === "fireball") power *= 1.35;
-  if (special === "venomSpike") power *= 1.1;
+  if (special === "venomSpike" || special === "magmaSpit") power *= 1.1;
+  if (special === "eruption") power *= 1.6;
+  if (atk.buffs.slipBoost) power *= 1.25; // Aquivern's Slipstream
+  if (c.passive.id === "kindling" && combo > 0) power *= 1.1;
   if (atk.nuke) power *= 1.8; // Nuclear Spike
   if (atk.buffs.tidal) power *= 1.15;
   if (c.passive.id === "heatingUp") power *= 1 + Math.min(0.2, 0.02 * c.spikes);
@@ -331,11 +359,13 @@ Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
     const b = def.at[bp];
     const gap = Math.abs(Rules.lane(def.side, bp) - tLane);
     const leap = gap > 0 && b.active.id === "leapBlock" && !!def.buffs.leapBlock;
-    const weight = gap === 0 ? 1 : leap ? CONFIG.leapRow : gap === 1 ? CONFIG.blockNeighborRow : 0;
+    const wall = b.active.id === "greatWall" && !!def.buffs.greatWall; // guards every row head-on
+    const weight = gap === 0 || wall ? 1 : leap ? CONFIG.leapRow : gap === 1 ? CONFIG.blockNeighborRow : 0;
     if (!weight) return;
     const blockSkill = (Rules.eff(def, b, "str") + Rules.eff(def, b, "per")) / 2;
     let chance = Rules.clamp(CONFIG.blockBase + (blockSkill - power * 0.85) * 0.006, 0.22, 0.65);
     if (b.passive.id === "ironShell") chance *= 1.2;
+    if (b.passive.id === "fortified") chance *= 1.4;
     if (b.active.id === "hornWall" && def.buffs.hornWall) chance *= 1.35;
     if (spiker.passive.id === "menacing") chance *= 0.65;
     if (!Rules.isFront(fromPos)) chance *= 0.8;
@@ -361,28 +391,30 @@ Rules.spike = (atk, fromPos, inQ, def, targetPos, timing, special, combo = 0) =>
   let power = Rules.spikeBasePower(atk, fromPos, inQ, combo, special) + Rules.rand(0, 12);
   power *= CONFIG.timing[timing].power;
   atk.buffs.tidal = false;
+  atk.buffs.slipBoost = false;
   c.spikes++;
-  c.winded = 2; // weaker through the end of the next rally
+  c.winded = c.passive.id === "magmaVeins" ? 0 : 2; // weaker through the end of the next rally
 
   const a = Rules.aim(atk.side, fromPos, def.side, targetPos);
   if (Math.random() < Rules.spikeOutChance(atk, fromPos, inQ, a.risk, timing) * (atk.nuke ? 0.5 : 1)) {
     return { out: true, power, aimMult: a.aimMult, passives };
   }
   const spooked = !!atk.buffs.spooked;
-  if (special !== "shadowStrike") {
+  if (special !== "shadowStrike" && special !== "eruption") {
     const blocks = Rules.blockChances(atk, fromPos, def, targetPos, power);
     atk.buffs.spooked = false;
     if (blocks.length && c.passive.id === "menacing") passives.push("Menacing");
     for (const b of blocks) {
       if (Math.random() < b.chance) {
-        const bp = def.at[b.pos].passive.id === "ironShell" ? ["Iron Shell"] : [];
+        const bpid = def.at[b.pos].passive.id;
+        const bp = bpid === "ironShell" ? ["Iron Shell"] : bpid === "fortified" ? ["Fortified"] : [];
         return { blocked: true, blockerPos: b.pos, power, passives, blockerPassives: bp };
       }
     }
   }
   atk.buffs.spooked = false;
   if (spooked) passives.push("Blockers spooked!");
-  return { power, aimMult: a.aimMult, passives, poison: special === "venomSpike" };
+  return { power, aimMult: a.aimMult, passives, poison: special === "venomSpike", burn: special === "eruption" || special === "magmaSpit" };
 };
 
 // Estimated chance a spike at targetPos wins the point (for the red target glow)
@@ -390,7 +422,7 @@ Rules.killChance = (atk, fromPos, inQ, def, targetPos, combo, special) => {
   const power = Rules.spikeBasePower(atk, fromPos, inQ, combo, special) * 1.1 + 6;
   const a = Rules.aim(atk.side, fromPos, def.side, targetPos);
   const out = Rules.spikeOutChance(atk, fromPos, inQ, a.risk, "good");
-  const blocks = special === "shadowStrike" ? [] : Rules.blockChances(atk, fromPos, def, targetPos, power);
+  const blocks = special === "shadowStrike" || special === "eruption" ? [] : Rules.blockChances(atk, fromPos, def, targetPos, power);
   const notBlocked = blocks.reduce((s, b) => s * (1 - b.chance), 1);
   return {
     kill: (1 - out) * notBlocked * Rules.shankChance(def, targetPos, power, "spike", a.aimMult),
@@ -467,6 +499,8 @@ AI.chooseBlocker = (def, atk, spikerPos, smart) => {
     let sc = rowRisk * (0.7 + (b.str + b.per) / 300);
     if (b.passive.id === "ironShell" || (b.active.id === "hornWall" && def.buffs.hornWall)) sc *= 1.2;
     if (b.active.id === "leapBlock" && def.buffs.leapBlock) sc *= 1.5;
+    if (b.active.id === "greatWall" && def.buffs.greatWall) sc *= 3;
+    if (b.passive.id === "fortified") sc *= 1.3;
     if (sc > bestScore) { bestScore = sc; best = bp; }
   });
   return best;
@@ -493,6 +527,9 @@ AI.preRally = (team, receivingServe, smart) => {
     if (id === "deepRoots" && Math.random() < smart * 0.5) used.push(p);
     if (id === "cactusCover" && !receivingServe && Math.random() < smart * 0.6) used.push(p);
     if (id === "leapBlock" && Math.random() < smart * 0.6) used.push(p);
+    if (id === "greatWall" && !receivingServe && Math.random() < smart * 0.7) used.push(p);
+    if (id === "bubblePass" && receivingServe && Math.random() < smart * 0.7) used.push(p);
+    if (id === "slipstream" && Math.random() < smart * 0.6) used.push(p);
   });
   used.forEach((p) => Rules.useAbility(team, p));
   return used;

@@ -21,10 +21,14 @@ function badgesHTML(c) {
 
 // ---------------- tooltip ----------------
 const tip = $("tooltip");
+function rankHTML(c) {
+  const r = RANKS[c.rank] || RANKS.D;
+  return `<span class="rk rk-${c.rank}" style="--rk:${r.color}">${c.rank}</span>`;
+}
 function tooltipHTML(c) {
   const live = c.cooldown !== undefined
     ? `<div class="tip-ab">${c.cooldown > 0 ? `Ability recharging: ${c.cooldown} rall${c.cooldown === 1 ? "y" : "ies"}` : "Ability ready ✨"}${c.winded > 0 ? "<br>💨 Winded: spikes weaker" : ""}</div>` : "";
-  return `<b>${c.name}</b> <span class="muted">${c.classes.join(", ")}</span>` +
+  return `${rankHTML(c)} <b>${c.name}</b> <span class="muted">${c.classes.join(", ")}</span>` +
     STATS.map(([k, , , full]) => `<div>${full}: ${c[k]}</div>`).join("") +
     `<div class="tip-ab"><i>Passive · ${c.passive.name}:</i> ${c.passive.text}</div>` +
     `<div class="tip-ab"><i>Active · ${c.active.name}:</i> ${c.active.text}</div>` + live;
@@ -70,6 +74,7 @@ function saveTeam() {
 
 // ---------- sprites: trim the empty space around each drawing so all creatures look even ----------
 const SPRITE = {};
+const SPRITE_DIM = {}; // trimmed drawing size in pixels, used to size creatures on court
 const spriteSrc = (src) => SPRITE[src] || src;
 function trimSprite(src) {
   return new Promise((resolve) => {
@@ -90,6 +95,7 @@ function trimSprite(src) {
           out.width = x1 - x0 + 3; out.height = y1 - y0 + 3;
           out.getContext("2d").drawImage(cv, x0, y0, out.width - 2, out.height - 2, 1, 1, out.width - 2, out.height - 2);
           SPRITE[src] = out.toDataURL();
+          SPRITE_DIM[src] = { w: x1 - x0 + 1, h: y1 - y0 + 1 };
         }
       } catch (e) { /* e.g. opened as a local file: keep the original picture */ }
       resolve();
@@ -106,14 +112,15 @@ const placedPos = (id) => Rules.POSITIONS.find((p) => builder.slots[p] === id);
 function renderRoster() {
   const roster = $("roster");
   roster.innerHTML = "";
-  CREATURES.forEach((c) => {
+  const order = "SABCD";
+  [...CREATURES].sort((a, b) => order.indexOf(a.rank) - order.indexOf(b.rank)).forEach((c) => {
     const card = document.createElement("div");
     const placed = placedPos(c.id) !== undefined;
     card.className = "card" + (builder.selected === c.id ? " selected" : "") + (placed ? " placed" : "");
     card.innerHTML = `
       ${c.looks.length > 1 ? '<button class="look-btn" title="Change look">Look ⇄</button>' : ""}
       <img src="${lookOf(c)}" alt="${c.name}">
-      <div class="name">${c.name}</div>
+      <div class="name">${rankHTML(c)} ${c.name}</div>
       ${badgesHTML(c)}
       ${STATS.map(([k, short, color]) => `
         <div class="stat-row"><span>${short}</span>
@@ -233,7 +240,16 @@ const HEAD = 16; // how far above the feet the ball sits
 function feet(side, pos) {
   return { x: XS[side][Rules.isFront(pos) ? "front" : "back"], y: LANE_Y[Rules.lane(side, pos)] };
 }
-function headPt(side, pos) { const f = feet(side, pos); return { x: f.x, y: f.y - HEAD, gy: f.y }; }
+// How tall the creature's drawing is on court (in % of court height); bigger creatures hold the ball higher
+function headH(side, pos) { const c = M && teamOf(side).at[pos]; return c && c._headH ? c._headH : HEAD - 2.5; }
+function headPt(side, pos) { const f = feet(side, pos); return { x: f.x, y: f.y - headH(side, pos) - 2.5, gy: f.y }; }
+// Creatures show bigger when their drawing is bigger; S and A ranks get a minimum boost.
+function sizeOf(c) {
+  const dim = SPRITE_DIM[c.img];
+  const byArt = dim ? Rules.clamp(Math.max(dim.w, dim.h) / 140, 1, 1.9) : 1;
+  const r = RANKS[c.rank] || RANKS.D;
+  return Math.max(r.minSize, byArt) * (r.sizeBoost || 1);
+}
 
 const elOf = new Map(); // creature instance -> its element on court
 
@@ -281,7 +297,11 @@ function buildCourt() {
       // face the net: player team looks right, CPU team looks left
       const facesLeft = (c.faces || "left") === "left";
       el.className = `crt ${side}` + ((side === "player") === facesLeft ? " flip" : "");
-      el.innerHTML = `<div class="badge-fx"></div><div class="shadow"></div><div class="jumper"><div class="bob"><img src="${spriteSrc(c.img)}" alt="${c.name}"></div></div><div class="tag">${c.name}</div>`;
+      el.innerHTML = `<div class="badge-fx"></div><div class="shadow"></div><div class="jumper"><div class="bob"><img src="${spriteSrc(c.img)}" alt="${c.name}"></div></div><div class="tag">${rankHTML(c)} ${c.name}</div>`;
+      const size = sizeOf(c);
+      el.style.width = 7.5 * size + "%";
+      const dim = SPRITE_DIM[c.img] || { w: 1, h: 1 };
+      c._headH = 2 * 7.5 * size * Math.min(0.9, dim.h / dim.w); // drawing height as % of court height
       const bob = el.querySelector(".bob");
       bob.style.animationDuration = (2 + Math.random() * 1.2).toFixed(2) + "s";
       bob.style.animationDelay = (-Math.random() * 3).toFixed(2) + "s";
@@ -325,8 +345,9 @@ function updateStatus() {
       el.classList.toggle("stampede", !!T.buffs.stampede);
       el.classList.toggle("poisoned", c.poison > 0);
       // a little pixel flame over the head shows buffs and poison (green glow only ever means "pass here")
-      const buffOn = (["deepRoots", "cactusCover", "leapBlock", "hornWall"].includes(c.active.id) && !!T.buffs[c.active.id]);
-      const badge = c.poison > 0 ? "flame_toxic" : buffOn ? (c.active.id === "hornWall" ? "flame_gold" : "flame_seed") : null;
+      const buffOn = (["deepRoots", "cactusCover", "leapBlock", "hornWall", "greatWall", "bubblePass", "slipstream"].includes(c.active.id) && !!T.buffs[c.active.id]);
+      const buffFlame = { hornWall: "flame_gold", greatWall: "flame_gold", bubblePass: "flame_tidal", slipstream: "flame_tidal" }[c.active.id] || "flame_seed";
+      const badge = c.burn > 0 ? "flame_fire" : c.poison > 0 ? "flame_toxic" : buffOn ? buffFlame : null;
       setBadge(el, badge);
       el.classList.toggle("recovering", !!c.recovering);
       el.classList.toggle("fortress", !!T.buffs.fortress && Rules.isFront(p));
@@ -607,7 +628,7 @@ function pop(side, pos, text, kind = "") {
   el.textContent = text;
   el.style.left = f.x + "%";
   // passive text sits just under the name tag; everything else above the head
-  el.style.top = (kind === "passive" ? f.y + 7 + n * 3.5 : f.y - 15 - n * 4) + "%";
+  el.style.top = (kind === "passive" ? f.y + 7 + n * 3.5 : f.y - headH(side, pos) - 1.5 - n * 4) + "%";
   $("court").appendChild(el);
   setTimeout(() => { el.remove(); popStack.set(key, Math.max(0, (popStack.get(key) || 1) - 1)); }, 1300);
 }
@@ -666,6 +687,19 @@ function abilityFx(side, team, pos) {
     }
     case "hornWall": playSprite("puff_gold", f.x, f.y - 8); addShield(side, pos); break;
     case "deepRoots": playSprite("puff_seed", f.x, f.y - 4); ripple(f.x, f.y, "#5fd35f", 12); break;
+    case "eruption":
+      playSprite("puff_fire", h.x, h.y + 4, { scale: fxScale() + 1 }); streaks(h.x, h.y + 6, "#ff7a1a", 12, 7); courtShake("s"); break;
+    case "magmaSpit": playSprite("puff_fire", h.x, h.y + 4); streaks(h.x, h.y + 6, "#ff7a1a", 8, 5); break;
+    case "bubblePass": case "slipstream":
+      playSprite("puff_tidal", f.x, f.y, { anchor: "bottom" }); ripple(f.x, f.y, "#4fc3ff", 12); Sound.play("water"); break;
+    case "greatWall":
+      playSprite("puff_gold", f.x, f.y - 8);
+      [0, 1, 2].forEach((ln) => {
+        const el = playSprite("shield", side === "player" ? 47 : 53, LANE_Y[ln] - 9, { loop: true, frameMs: 110 });
+        el.classList.add("shield-fx");
+      });
+      Sound.play("shield");
+      break;
     case "cactusCover":
       playSprite("puff_seed", f.x, f.y - 6);
       Rules.POSITIONS.filter((p) => p !== pos && Rules.dist(side, p, pos) === 1).forEach((p) => {
@@ -796,8 +830,8 @@ function ultFx(side, u) {
 }
 
 // ---------- abilities (player) ----------
-const ARMABLE = ["fireball", "shadowStrike", "venomSpike", "tidalSet", "lanternSet", "sneakySeed"];
-const SPIKE_ABILITIES = ["fireball", "shadowStrike", "venomSpike"];
+const ARMABLE = ["fireball", "shadowStrike", "venomSpike", "eruption", "magmaSpit", "tidalSet", "lanternSet", "sneakySeed"];
+const SPIKE_ABILITIES = ["fireball", "shadowStrike", "venomSpike", "eruption", "magmaSpit"];
 const SET_ABILITIES = ["tidalSet", "lanternSet"];
 
 function abilityCtx() {
@@ -1094,7 +1128,7 @@ async function matchLoop(token) {
   }
 }
 
-const FX_OF = { fireball: "fire", shadowStrike: "shadow", tidalSet: "tidal", sneakySeed: "seed", venomSpike: "toxic", lanternSet: "lantern" };
+const FX_OF = { fireball: "fire", shadowStrike: "shadow", tidalSet: "tidal", sneakySeed: "seed", venomSpike: "toxic", lanternSet: "lantern", eruption: "fire", magmaSpit: "fire" };
 
 // Plays one rally. Returns { winner, reason }.
 async function playRally() {
@@ -1222,10 +1256,10 @@ async function playRally() {
         }
         popPassives(side, holder, r.passives);
         if (rc.passive.id === "prickly" && incoming.kind === "spike" && incoming.attacker) {
-          incoming.attacker.poison = 3;
+          const stuck = Rules.afflict(incoming.attacker, "poison");
           const ap = posOf(teamOf(incoming.attackerSide), incoming.attacker);
           pop(side, holder, "Prickly", "passive");
-          pop(incoming.attackerSide, ap, "Poisoned!", "ability");
+          pop(incoming.attackerSide, ap, stuck ? "Poisoned!" : "Thick Hide", stuck ? "ability" : "passive");
           const g = headPt(incoming.attackerSide, ap);
           playSprite("puff_toxic", g.x, g.y + 8);
         }
@@ -1287,7 +1321,7 @@ async function playRally() {
     }
     if (action.special) {
       Rules.useAbility(T, holder);
-      Sound.play({ fireball: "fire", tidalSet: "water", venomSpike: "poison", lanternSet: "spook", hornWall: "shield" }[action.special] || "ability");
+      Sound.play({ fireball: "fire", eruption: "fire", magmaSpit: "fire", tidalSet: "water", venomSpike: "poison", lanternSet: "spook", hornWall: "shield" }[action.special] || "ability");
       abilityFx(side, T, holder);
       setBallFx([...M.fx, FX_OF[action.special]]);
       if (action.special !== "sneakySeed") swing(side, 1, holder);
@@ -1312,6 +1346,12 @@ async function playRally() {
       popPassives(side, holder, p.passives);
       if (action.special === "lanternSet") swing(side, 2, holder);
       swing(side, Rules.comboGain(asSet ? "set" : "pass", p.quality), holder, p.quality >= 80 && !action.special ? (asSet ? "Perfect set!" : "Perfect pass!") : null);
+      if (!asSet && hc.passive.id === "tailwind") swing(side, 1, holder, "Tailwind");
+      if (!asSet && hc.active.id === "slipstream" && T.buffs.slipstream) {
+        T.buffs.slipBoost = true;
+        pop(side, holder, "Slipstream!", "ability");
+        setBallFx([...M.fx, "tidal"]);
+      }
       log(`${who(side, hc)} ${asSet ? "sets" : "bumps"} to ${mate.name}.`);
       if (asSet && Rules.has(hc, "setter")) {
         // a real setter: clean, high, golden arc
@@ -1377,12 +1417,13 @@ async function playRally() {
         const blocker = O.at[res.blockerPos];
         const bp = headPt(other(side), res.blockerPos);
         const leapt = Rules.lane(other(side), res.blockerPos) !== Rules.lane(other(side), action.target) && blocker.active.id === "leapBlock";
-        if (leapt) { bp.y = LANE_Y[Rules.lane(other(side), action.target)] - HEAD; }
+        if (leapt) { bp.y = LANE_Y[Rules.lane(other(side), action.target)] - headH(other(side), res.blockerPos) - 2.5; }
         anim(blocker, "jump");
         await flyBall({ x: side === "player" ? 48 : 52, y: bp.y - 4, gy: bp.gy }, 260, 2);
         pop(other(side), res.blockerPos, "BLOCKED!", "big");
         Sound.play("block");
         popPassives(other(side), res.blockerPos, res.blockerPassives);
+        if (blocker.passive.id === "fortified") swing(other(side), 2, res.blockerPos);
         playSprite("puff_gold", side === "player" ? 49 : 51, bp.y + 6);
         streaks(side === "player" ? 49 : 51, bp.y + 6, "#bfeaff", 10, 6);
         courtShake("s");
@@ -1398,15 +1439,19 @@ async function playRally() {
       if (res.power >= CONFIG.boomPower) Sound.play("whoosh");
       await flyBall(tgt, wasNuke ? 200 : Math.max(220, 400 - lvl * 30), 4);
       spikeImpact(tgt, res.power, lvl, wasNuke);
-      if (res.poison) {
+      if (res.poison || res.burn) {
         const victim = O.at[action.target];
-        victim.poison = 3; // this rally + the next two
-        pop(other(side), action.target, "Poisoned!", "ability");
+        const kind = res.burn ? "burn" : "poison";
+        const word = res.burn ? "Burned!" : "Poisoned!";
         const vp = headPt(other(side), action.target);
-        playSprite("puff_toxic", vp.x, vp.y + 8);
-        log(`<span class="abil">${who(other(side), victim)} is Poisoned!</span>`);
+        if (Rules.afflict(victim, kind)) { // this rally + the next two
+          pop(other(side), action.target, word, "ability");
+          playSprite(res.burn ? "puff_fire" : "puff_toxic", vp.x, vp.y + 8);
+          log(`<span class="abil">${who(other(side), victim)} is ${word}</span>`);
+        } else pop(other(side), action.target, "Thick Hide", "passive");
         updateStatus();
       }
+      if (hc.passive.id === "magmaVeins") swing(side, 1, holder, "Magma Veins");
       incoming = { fromOpp: true, side: other(side), pos: action.target, power: res.power, kind: "spike", aim: res.aimMult, attacker: hc, attackerSide: side };
       continue;
     }
