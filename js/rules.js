@@ -40,6 +40,12 @@ const CONFIG = {
 
   // Explosions: only spikes at least this strong get a big explosion (tuned to ~1 every 3 rallies)
   boomPower: 100,
+  epicLevel: 5,          // momentum level at which a spike gets the slow-motion windup
+  bounceSpikePower: 80,  // spikes this hard that aren't dug slam the floor and bounce away
+  // receivers diving to cover a neighbor: chance = (avg of DEF & PER - floor) / scale, capped
+  coverStatFloor: 55, coverStatScale: 150, coverMax: 0.3, coverDiveMult: 0.92,
+  // extra momentum for cleanly digging a hard spike (power >= first number: +1, >= second: +2)
+  digMomentum: [60, 80],
   bigBoomPower: 120,
   comboPerfectPass: 75,     // pass/dig quality needed for a combo level
   comboPerfectSet: 80,      // set quality needed for a combo level
@@ -198,6 +204,51 @@ Rules.coverPos = (team, pos, kind) => {
   const d = Rules.POSITIONS.find((p) => team.at[p].active.id === "cactusCover");
   return d && d !== pos && Rules.dist(team.side, d, pos) === 1 ? d : pos;
 };
+// Every receiver can dive to cover a spike aimed at a teammate next to it.
+// Better receivers (higher DEF and PER) cover more often; only covers if it would dig better.
+Rules.autoCoverInfo = (team, pos, kind) => {
+  if (kind !== "spike") return null;
+  const tSkill = receiveSkill(team, pos, kind).skill;
+  let best = null;
+  Rules.POSITIONS.forEach((p) => {
+    const c = team.at[p];
+    if (p === pos || c.recovering || !Rules.has(c, "receiver") || Rules.dist(team.side, p, pos) !== 1) return;
+    const skill = receiveSkill(team, p, kind).skill * CONFIG.coverDiveMult;
+    if (skill <= tSkill) return;
+    const avg = (Rules.eff(team, c, "def") + Rules.eff(team, c, "per")) / 2;
+    const chance = Rules.clamp((avg - CONFIG.coverStatFloor) / CONFIG.coverStatScale, 0, CONFIG.coverMax);
+    if (chance > 0 && (!best || chance > best.chance)) best = { pos: p, chance };
+  });
+  return best;
+};
+Rules.autoCover = (team, pos, kind) => {
+  const b = Rules.autoCoverInfo(team, pos, kind);
+  return b && Math.random() < b.chance ? b.pos : null;
+};
+
+// Receiver abilities used right after digging a spike upgrade that dig on the spot.
+// personal: only the Star holding the ball can do it; team-wide ones work from anyone.
+Rules.DIG_BOOST = {
+  deepRoots: { personal: true, q: () => 95 },
+  bubblePass: { personal: true, q: (q) => Math.max(85, q + 25) },
+  slipstream: { personal: true, q: (q) => q + 15 },
+  highTide: { personal: false, q: (q) => q + 12 },
+  stampede: { personal: false, q: (q) => q + 12 },
+};
+Rules.digBoostReady = (team, pos, ctx) => {
+  if (!ctx || !ctx.justDug || ctx.touch !== 1) return false;
+  const c = team.at[pos];
+  const b = Rules.DIG_BOOST[c.active.id];
+  return !!b && c.cooldown <= 0 && !team.buffs[c.active.id] && (!b.personal || ctx.holderPos === pos);
+};
+// Applies the ability and returns the upgraded dig quality
+Rules.digBoost = (team, pos, q) => {
+  const c = team.at[pos];
+  const nq = Rules.clamp(Rules.DIG_BOOST[c.active.id].q(q), 0, 100);
+  c.cooldown = ABILITY_COOLDOWN;
+  if (c.active.id !== "deepRoots") team.buffs[c.active.id] = true; // Rooted Stance is spent on this dig
+  return Math.max(q, nq);
+};
 Rules.useAbility = (team, pos) => {
   const c = team.at[pos];
   c.cooldown = ABILITY_COOLDOWN;
@@ -281,11 +332,16 @@ Rules.receive = (team, pos, power, kind, aimMult = 1) => {
 Rules.shankChance = (team, pos, power, kind, aimMult = 1) => {
   pos = Rules.coverPos(team, pos, kind);
   if (team.at[pos].recovering) { pos = Rules.availablePos(team, pos); aimMult *= CONFIG.recoverCoverMult; }
-  const c = team.at[pos];
-  if (kind === "spike" && c.active.id === "deepRoots" && team.buffs.deepRoots) return 0;
-  const r = receiveSkill(team, pos, kind);
-  const mean = CONFIG.receiveBase + r.skill * aimMult - power;
-  return Rules.clamp((CONFIG.errorBelow - mean + r.spread) / (2 * r.spread), 0, 1);
+  const one = (p, aim) => {
+    const c = team.at[p];
+    if (kind === "spike" && c.active.id === "deepRoots" && team.buffs.deepRoots) return 0;
+    const r = receiveSkill(team, p, kind);
+    const mean = CONFIG.receiveBase + r.skill * aim - power;
+    return Rules.clamp((CONFIG.errorBelow - mean + r.spread) / (2 * r.spread), 0, 1);
+  };
+  const base = one(pos, aimMult);
+  const cov = Rules.autoCoverInfo(team, pos, kind);
+  return cov ? (1 - cov.chance) * base + cov.chance * one(cov.pos, aimMult * CONFIG.coverDiveMult) : base;
 };
 
 function farPenalty(team, c, from, to) {

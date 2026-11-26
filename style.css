@@ -617,3 +617,13 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 }
 @keyframes toast { 0% { opacity: 0; transform: translate(-50%, 20px); } 10%, 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 @media (max-width: 760px) { .region-tabs { grid-template-columns: repeat(3, 1fr); } .draft-cards { grid-template-columns: 1fr; } }
+
+/* huge spikes: slow-motion windup */
+#slowmo { position: absolute; inset: 0; pointer-events: none; z-index: 8; opacity: 0; transition: opacity 0.25s;
+  background: radial-gradient(circle at var(--sx, 50%) var(--sy, 50%), transparent 0 9%, #0008 22%, #000c 70%); }
+#slowmo.on { opacity: 1; transition: opacity 0.35s; }
+.crt .jumper.hang { animation: hang 0.9s cubic-bezier(.2,.8,.3,1) forwards; }
+@keyframes hang { 0% { transform: translateY(-25%); } 100% { transform: translateY(-58%) scale(1.06); } }
+.crt .jumper.smash { animation: smash 0.35s ease-in; }
+@keyframes smash { 0% { transform: translateY(-58%) rotate(0deg); } 30% { transform: translateY(-50%) rotate(8deg) scale(1.1, 0.9); } 100% { transform: translateY(0); } }
+.abil-btn.boost { background: linear-gradient(#8fd0ff, #3f7fd0); color: #fff; border-color: #dff4ff; box-shadow: 0 0 14px #4fc3ff; }

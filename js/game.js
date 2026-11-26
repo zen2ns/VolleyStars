@@ -893,6 +893,58 @@ function spikeImpact(pt, power, level, nuke = false) {
   if (tier >= 3) flash("#ffffff");
 }
 
+// ---------- huge spikes: a slow-motion windup, then a blur of a smash ----------
+function slowmo(on, x, y) {
+  const el = $("slowmo");
+  if (on) { el.style.setProperty("--sx", x + "%"); el.style.setProperty("--sy", y + "%"); }
+  el.classList.toggle("on", on);
+}
+async function spikeWindup(side, pos, kind) {
+  const c = teamOf(side).at[pos];
+  const h = headPt(side, pos);
+  const j = elOf.get(c).querySelector(".jumper");
+  j.classList.remove("jump", "dig", "shake", "smash");
+  void j.offsetWidth;
+  j.classList.add("hang"); // floats up and hangs in the air
+  slowmo(true, h.x, h.y);
+  pop(side, pos, "FULL POWER!", "big");
+  Sound.play("ult");
+  const color = WAVE_COLOR[kind] || "#ffd65c";
+  const r = $("court").getBoundingClientRect();
+  const lift = flyBall({ x: M.ball.x, y: M.ball.y - 6, gy: M.ball.gy }, 820, 0);
+  // energy gathering into the ball
+  const charge = setInterval(() => {
+    if (!M) return;
+    for (let i = 0; i < 3; i++) {
+      const a = Math.random() * Math.PI * 2, d = 6 + Math.random() * 5;
+      const ox = Math.cos(a) * d, oy = Math.sin(a) * d * 2;
+      particle(M.ball.x + ox, M.ball.y + oy, "spark", [(-ox * r.width) / 100, (-oy * r.height) / 100], color);
+    }
+  }, 90);
+  try { await lift; } finally { clearInterval(charge); }
+  await wait(120);
+  j.classList.remove("hang");
+  void j.offsetWidth;
+  j.classList.add("smash");
+  slowmo(false);
+  flash("#ffffff");
+}
+// A spike too fast to dig: it slams into the floor and bounces away
+async function ballBounce(side, pos) {
+  const f = feet(side, pos);
+  const dir = side === "player" ? -1 : 1; // away from the net
+  const X = (dx) => Rules.clamp(f.x + dir * dx, 2, 98);
+  await flyBall({ x: X(2.5), y: f.y + 1, gy: f.y + 1 }, 90, 0);
+  playSprite("puff_dust", X(2.5), f.y + 1, { anchor: "bottom" });
+  ripple(X(2.5), f.y + 1, "#ffffff", 14);
+  courtShake("s");
+  await flyBall({ x: X(9), y: f.y + 3, gy: f.y + 3 }, 380, 16);
+  ripple(X(9), f.y + 3, "#ffffff", 8);
+  Sound.play("bump");
+  await flyBall({ x: X(13), y: f.y + 4, gy: f.y + 4 }, 260, 6);
+  ripple(X(13), f.y + 4, "#ffffff", 5);
+}
+
 // ---------- ultimates ----------
 function updateUltHUD() {
   if (!M) return;
@@ -967,7 +1019,7 @@ const SET_ABILITIES = ["tidalSet", "lanternSet", "joltSet", "thunderSet"];
 function abilityCtx() {
   const p = M && M.pending;
   if (!p) return null;
-  return { holderPos: p.holderPos, touch: p.touch, canSpike: p.canSpike, serve: p.serve };
+  return { holderPos: p.holderPos, touch: p.touch, canSpike: p.canSpike, serve: p.serve, justDug: p.justDug };
 }
 
 function renderAbilityButtons() {
@@ -977,9 +1029,10 @@ function renderAbilityButtons() {
   Rules.POSITIONS.forEach((pos) => {
     const c = M.player.at[pos];
     const armed = M.armed && M.armed.c === c;
-    if (!armed && !Rules.abilityReady(M.player, pos, ctx)) return;
+    const boost = Rules.digBoostReady(M.player, pos, ctx);
+    if (!armed && !boost && !Rules.abilityReady(M.player, pos, ctx)) return;
     const btn = document.createElement("button");
-    btn.className = "abil-btn" + (armed ? " armed" : "");
+    btn.className = "abil-btn" + (armed ? " armed" : "") + (boost ? " boost" : "");
     btn.textContent = armed ? `${c.active.name} ✓` : c.active.name;
     btn.title = c.active.text;
     btn.addEventListener("click", (e) => { e.stopPropagation(); onAbilityClick(c); });
@@ -1000,6 +1053,16 @@ function onAbilityClick(c) {
   if (!ctx) return;
   const pos = posOf(M.player, c);
   if (M.armed && M.armed.c === c) { M.armed = null; refreshControls(); return; } // un-arm
+  if (Rules.digBoostReady(M.player, pos, ctx)) {
+    // used right after a dig: upgrades the pass this Star's team is holding right now
+    const q = Rules.digBoost(M.player, pos, M.pending.quality);
+    M.pending.quality = q;
+    M.pending.justDug = false;
+    M.digBoosted = q;
+    digBoostFx("player", pos, ctx.holderPos);
+    refreshControls();
+    return;
+  }
   if (!Rules.abilityReady(M.player, pos, ctx)) return;
   if (ARMABLE.includes(c.active.id)) {
     M.armed = { c, id: c.active.id };
@@ -1008,6 +1071,17 @@ function onAbilityClick(c) {
     abilityFx("player", M.player, pos);
   }
   refreshControls();
+}
+
+function digBoostFx(side, pos, holderPos) {
+  const T = teamOf(side);
+  abilityFx(side, T, pos);
+  pop(side, holderPos, "Pass upgraded!", "big");
+  const h = headPt(side, holderPos);
+  playSprite("puff_tidal", h.x, h.y + 4);
+  ripple(feet(side, holderPos).x, feet(side, holderPos).y, "#8fd0ff", 14);
+  Sound.play("ability");
+  updateStatus();
 }
 
 // ---------- player input ----------
@@ -1357,7 +1431,7 @@ async function playRally() {
   while (true) {
     const side = incoming.side;
     const T = teamOf(side), O = teamOf(other(side));
-    let holder, q, touch, isSet;
+    let holder, q, touch, isSet, justDug = false;
 
     if (incoming.fromOpp) {
       M.poss = side;
@@ -1368,6 +1442,19 @@ async function playRally() {
         await flyBall(headPt(side, coverer), 220, 4);
         playSprite("puff_seed", feet(side, coverer).x, feet(side, coverer).y - 6);
         incoming.pos = coverer;
+      }
+      else {
+        // any good receiver next to the target may dive across and take it
+        const ac = Rules.autoCover(T, incoming.pos, incoming.kind);
+        if (ac) {
+          pop(side, ac, "Dive!", "ability");
+          anim(T.at[ac], "dig");
+          await flyBall(headPt(side, ac), 200, 3);
+          const cf = feet(side, ac);
+          playSprite("puff_dust", cf.x, cf.y - 2);
+          incoming.pos = ac;
+          incoming.aim *= CONFIG.coverDiveMult;
+        }
       }
       if (T.at[incoming.pos].recovering) {
         // the blocker is still landing: a teammate has to dive for it
@@ -1398,9 +1485,14 @@ async function playRally() {
       if (r.error) {
         anim(rc, "shake");
         const f = feet(side, incoming.pos);
-        await flyBall({ x: f.x + (side === "player" ? -4 : 4), y: f.y, gy: f.y }, 250, 0);
-        pop(side, incoming.pos, incoming.kind === "serve" ? "ACE!" : "Shanked!", "bad");
-        ripple(f.x, f.y, "#ffffff", 10);
+        if (incoming.kind === "spike" && incoming.power >= CONFIG.bounceSpikePower) {
+          pop(side, incoming.pos, "Too fast!", "bad");
+          await ballBounce(side, incoming.pos);
+        } else {
+          await flyBall({ x: f.x + (side === "player" ? -4 : 4), y: f.y, gy: f.y }, 250, 0);
+          pop(side, incoming.pos, incoming.kind === "serve" ? "ACE!" : "Shanked!", "bad");
+          ripple(f.x, f.y, "#ffffff", 10);
+        }
         log(`${who(side, rc)} couldn't dig it${incoming.kind === "serve" ? ". Ace!" : "."}`);
         await wait(500);
         return {
@@ -1448,8 +1540,11 @@ async function playRally() {
         }
       }
       q = r.quality; touch = 1; isSet = false;
-      const bigDig = incoming.kind === "spike" && incoming.power >= 80 && q >= 55;
-      swing(side, bigDig ? 2 : Rules.comboGain("pass", q), holder, bigDig ? "Big dig! Momentum swing" : null);
+      justDug = incoming.kind === "spike";
+      const [dm1, dm2] = CONFIG.digMomentum;
+      const digBonus = incoming.kind === "spike" && q >= 55 ? (incoming.power >= dm2 ? 2 : incoming.power >= dm1 ? 1 : 0) : 0;
+      const bigDig = digBonus >= 2;
+      swing(side, Rules.comboGain("pass", q) + digBonus, holder, digBonus ? (bigDig ? "Big dig! Momentum swing" : "Good dig!") : null);
       if (bigDig && T.at[holder].passive.id === "desertCalm") swing(side, 1, holder, "Desert Calm");
       if (T.buffs.highTide && q >= 75) swing(side, 1, holder, "High Tide");
       updateStatus();
@@ -1492,11 +1587,22 @@ async function playRally() {
 
     let action;
     if (side === "player") {
-      action = await askPlayer({ holderPos: holder, touch, canSpike, quality: q });
+      M.digBoosted = null;
+      action = await askPlayer({ holderPos: holder, touch, canSpike, quality: q, justDug });
       checkAlive(token);
+      if (M.digBoosted != null) { q = M.digBoosted; M.digBoosted = null; }
     } else {
       setStep("cpu", touch, canSpike ? "spike" : touch === 3 ? "free" : touch === 1 ? "bump" : "set");
       await wait(600);
+      if (justDug && q < 70) {
+        const bctx = { justDug, touch, holderPos: holder };
+        const bp = Rules.POSITIONS.find((p) => Rules.digBoostReady(T, p, bctx));
+        if (bp && Math.random() < M.smart * 0.8) {
+          q = Rules.digBoost(T, bp, q);
+          digBoostFx(side, bp, holder);
+          await wait(450);
+        }
+      }
       action = AI.decide(T, O, holder, touch, isSet, q, levelFor(side), M.smart);
       if (action.type === "spike") action.timing = AI.timing(M.timingSkill);
       if (action.type === "sneaky") setStep("cpu", touch, "sneaky");
@@ -1626,9 +1732,16 @@ async function playRally() {
       }
       const lvl = levelFor(side);
       log(`${who(side, hc)} spikes${lvl >= 4 || wasNuke ? " with huge power" : ""}!`);
-      if (res.power >= CONFIG.boomPower) Sound.play("whoosh");
-      await flyBall(tgt, wasNuke ? 200 : Math.max(220, 400 - lvl * 30), 4);
+      const epic = wasNuke || lvl >= CONFIG.epicLevel || res.power >= CONFIG.bigBoomPower;
+      if (epic) await spikeWindup(side, holder, [...M.fx].pop() || (wasNuke ? "fire" : "spark"));
+      if (res.power >= CONFIG.boomPower || epic) Sound.play("whoosh");
+      if (epic) {
+        const from = { ...M.ball };
+        streaks((from.x + tgt.x) / 2, (from.y + tgt.y) / 2, WAVE_COLOR[[...M.fx].pop()] || "#ffffff", 10, 9);
+      }
+      await flyBall(tgt, epic ? 110 : Math.max(220, 400 - lvl * 30), epic ? 0 : 4);
       spikeImpact(tgt, res.power, lvl, wasNuke);
+      if (epic) await wait(160); // a beat of hit-stop to let the explosion land
       if (res.poison || res.burn) {
         const victim = O.at[action.target];
         const kind = res.burn ? "burn" : "poison";
