@@ -22,6 +22,7 @@ const Story = (() => {
     teamName: "My Team",
     teamLogo: "star",
     teamColor: "#2f6fdd",
+    codes: [],                            // gift codes already redeemed
   });
   let s = fresh();
   try {
@@ -52,6 +53,8 @@ const Story = (() => {
       if ((s.tokens || 0) < price || Story.ownsSkin(cid, rid)) return false;
       s.tokens -= price; s.skinsOwned.push(cid + ":" + rid); s.skins[cid] = rid; save(); return true;
     },
+    redeemed: (code) => (s.codes || []).includes(code),
+    redeem(code, tokens) { s.codes = [...(s.codes || []), code]; s.tokens = (s.tokens || 0) + tokens; save(); },
     // ----- Locker Room -----
     skin: (cid) => (s.skins || {})[cid] || null,
     equipSkin(cid, rid) { if (rid) s.skins[cid] = rid; else delete s.skins[cid]; save(); },

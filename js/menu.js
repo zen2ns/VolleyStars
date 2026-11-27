@@ -35,6 +35,7 @@ function renderSettings() {
   $("setMusic").value = s.music; $("setMusicVal").textContent = s.music + "%";
   $("setPoints").value = String(s.points);
   $("resetMsg").textContent = "";
+  $("giftMsg").textContent = "";
   $("resetPath").textContent = "Reset story progress";
   resetArmed = false;
 }
@@ -50,6 +51,26 @@ $("resetPath").addEventListener("click", () => {
   $("resetPath").textContent = "Reset story progress";
   $("resetMsg").textContent = "Story reset.";
 });
+
+// ---------- gift codes (one use each per story save) ----------
+const GIFT_CODES = { VOLLEYSTARS: 30, ZEN: 1000, SPIKER: 200 };
+function redeemGift() {
+  const code = $("giftInput").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const msg = $("giftMsg");
+  msg.className = "gift-msg small";
+  if (!code) return;
+  if (!(code in GIFT_CODES)) { msg.textContent = "That code doesn't exist."; msg.classList.add("bad"); Sound.play("shank"); return; }
+  if (Story.redeemed(code)) { msg.textContent = "You've already redeemed that code."; msg.classList.add("bad"); Sound.play("shank"); return; }
+  Story.redeem(code, GIFT_CODES[code]);
+  msg.textContent = `+${GIFT_CODES[code]} Star Tokens! You now have ${Story.tokens()}.`;
+  msg.classList.add("good");
+  $("giftInput").value = "";
+  Sound.play("ult");
+}
+$("giftRedeem").addEventListener("click", redeemGift);
+$("giftInput").addEventListener("keydown", (e) => { if (e.key === "Enter") redeemGift(); });
+// letters and numbers only, no spaces
+$("giftInput").addEventListener("input", (e) => { e.target.value = e.target.value.replace(/[^a-zA-Z0-9]/g, ""); });
 
 // ---------- menu buttons ----------
 $("menuFree").addEventListener("click", () => { Sound.play("click"); enterBuilder("free"); });
