@@ -815,6 +815,10 @@ function abilityFx(side, team, pos) {
       playSprite("puff_volt", h.x, h.y + 4, { scale: fxScale() + 1 }); streaks(h.x, h.y + 6, "#fff27a", 14, 8);
       flash("#fff27a"); courtShake("s"); break;
     case "headbutt": playSprite("puff_gold", h.x, h.y + 6); courtShake("s"); break;
+    case "frostfireSet": playSprite("puff_fire", h.x - 2, h.y + 4); playSprite("puff_ice", h.x + 2, h.y + 4); break;
+    case "undertowSet": playSprite("puff_tidal", h.x, h.y + 4); streaks(h.x, h.y + 6, "#4fc3ff", 8, 5); break;
+    case "groundPound": playSprite("puff_dust", f.x, f.y, { anchor: "bottom" }); ripple(f.x, f.y, "#c9a56a", 14); courtShake("s"); break;
+    case "jumpstart": case "overcharge": playSprite("puff_volt", h.x, h.y + 4); streaks(h.x, h.y + 6, "#fff27a", 8, 5); break;
     case "eruption":
       playSprite("puff_fire", h.x, h.y + 4, { scale: fxScale() + 1 }); streaks(h.x, h.y + 6, "#ff7a1a", 12, 7); courtShake("s"); break;
     case "magmaSpit": playSprite("puff_fire", h.x, h.y + 4); streaks(h.x, h.y + 6, "#ff7a1a", 8, 5); break;
@@ -1137,9 +1141,10 @@ function ultFx(side, u) {
 }
 
 // ---------- abilities (player) ----------
-const ARMABLE = ["fireball", "shadowStrike", "venomSpike", "eruption", "magmaSpit", "tidalSet", "lanternSet", "sneakySeed", "joltSet", "thunderSet", "headbutt"];
-const SPIKE_ABILITIES = ["fireball", "shadowStrike", "venomSpike", "eruption", "magmaSpit"];
-const SET_ABILITIES = ["tidalSet", "lanternSet", "joltSet", "thunderSet"];
+const ARMABLE = ["fireball", "shadowStrike", "venomSpike", "eruption", "magmaSpit", "tidalSet", "lanternSet", "sneakySeed", "joltSet", "thunderSet", "headbutt",
+  "frostfireSet", "undertowSet", "groundPound"];
+const SPIKE_ABILITIES = ["fireball", "shadowStrike", "venomSpike", "eruption", "magmaSpit", "groundPound"];
+const SET_ABILITIES = ["tidalSet", "lanternSet", "joltSet", "thunderSet", "frostfireSet", "undertowSet"];
 
 function abilityCtx() {
   const p = M && M.pending;
@@ -1492,7 +1497,7 @@ async function matchLoop(token) {
   }
 }
 
-const FX_OF = { fireball: "fire", shadowStrike: "shadow", tidalSet: "tidal", sneakySeed: "seed", venomSpike: "toxic", lanternSet: "lantern", eruption: "fire", magmaSpit: "fire", joltSet: "volt", thunderSet: "volt" };
+const FX_OF = { fireball: "fire", shadowStrike: "shadow", tidalSet: "tidal", sneakySeed: "seed", venomSpike: "toxic", lanternSet: "lantern", eruption: "fire", magmaSpit: "fire", joltSet: "volt", thunderSet: "volt", frostfireSet: "fire", undertowSet: "tidal" };
 
 // Plays one rally. Returns { winner, reason }.
 async function playRally() {
@@ -1665,6 +1670,15 @@ async function playRally() {
           const g = headPt(incoming.attackerSide, ap);
           playSprite("puff_ice", g.x, g.y + 8);
         }
+        if (incoming.kind === "spike" && incoming.setBy && incoming.setBy.passive.id === "thermalShock" && Rules.afflict(T.at[holder], "chill")) {
+          pop(side, holder, "Thermal Shock: Chilled!", "ability");
+          const g = headPt(side, holder);
+          playSprite("puff_ice", g.x, g.y + 8);
+        }
+        if (incoming.kind === "spike" && incoming.attacker && incoming.attacker.passive.id === "tremor") {
+          r.quality = Math.max(0, r.quality - 12);
+          pop(incoming.attackerSide, posOf(teamOf(incoming.attackerSide), incoming.attacker), "Tremor", "passive");
+        }
         if (rc.passive.id === "prickly" && incoming.kind === "spike" && incoming.attacker) {
           const stuck = Rules.afflict(incoming.attacker, "poison");
           const ap = posOf(teamOf(incoming.attackerSide), incoming.attacker);
@@ -1676,6 +1690,9 @@ async function playRally() {
       }
       q = r.quality; touch = 1; isSet = false;
       justDug = incoming.kind === "spike";
+      T.buffs.rattled = false;
+      if (justDug) T.buffs.dug = true; // Lochlo's Tide Pool
+      if (justDug && q >= 55 && T.at[holder].passive.id === "sparkDig") swing(side, 1, holder, "Spark Dig");
       const [dm1, dm2] = CONFIG.digMomentum;
       const digBonus = incoming.kind === "spike" && q >= 55 ? (incoming.power >= dm2 ? 2 : incoming.power >= dm1 ? 1 : 0) : 0;
       const bigDig = digBonus >= 2;
@@ -1796,7 +1813,7 @@ async function playRally() {
 
     // ----- spike -----
     if (action.type === "spike") {
-      const jolt = !!(T.buffs.jolt || T.buffs.thunder); // Jolt Set / Thunder Set slow the timing bar
+      const jolt = !!(T.buffs.jolt || T.buffs.thunder || T.buffs.overcharge); // Jolt Set / Thunder Set / Overcharge slow the timing bar
       let timing = side === "player" ? await runTiming(hc.ctrl, jolt ? 2 : 1) : action.timing;
       if (side === "cpu" && jolt) timing = { miss: "poor", poor: "ok", ok: "good", good: "perfect", perfect: "perfect" }[timing];
       checkAlive(token);
@@ -1864,6 +1881,7 @@ async function playRally() {
         popPassives(other(side), res.blockerPos, res.blockerPassives);
         if (blocker.passive.id === "fortified") swing(other(side), 2, res.blockerPos);
         if (res.chillAttacker && Rules.afflict(hc, "chill")) { pop(side, holder, "Chilled!", "ability"); updateStatus(); }
+        if (res.chillBlocker && Rules.afflict(blocker, "chill")) { pop(other(side), res.blockerPos, "Chilled!", "ability"); updateStatus(); }
         // the spike smashes into the block...
         if (epic) {
           spikeImpact({ x: wall.x, y: wall.y - 6, gy: wall.gy }, Math.max(res.power, CONFIG.boomPower), lvl, wasNuke);
@@ -1910,7 +1928,7 @@ async function playRally() {
         playSprite("puff_ice", hp.x, hp.y + 8);
         updateStatus();
       }
-      incoming = { fromOpp: true, side: other(side), pos: action.target, power: res.power, kind: "spike", aim: res.aimMult, attacker: hc, attackerSide: side, flight };
+      incoming = { fromOpp: true, side: other(side), pos: action.target, power: res.power, kind: "spike", aim: res.aimMult, attacker: hc, attackerSide: side, flight, setBy: res.setBy };
       continue;
     }
 
