@@ -80,7 +80,9 @@ const SPRITE_DIM = {}; // trimmed drawing size in pixels, used to size creatures
 const spriteSrc = (src) => SPRITE[src] || src;
 // Inline style that shrinks small-drawing Stars (their "size") in menus, same as on court.
 const sizeStyle = (c, flip = false) => {
-  const t = (flip ? "scaleX(-1) " : "") + (c.size && c.size !== 1 ? `scale(${c.size})` : "");
+  // never grow past the tile in menus (big on-court sizes like Zigazolt's would overflow)
+  const s = Math.min(c.size || 1, 1);
+  const t = (flip ? "scaleX(-1) " : "") + (s !== 1 ? `scale(${s})` : "");
   return t ? ` style="transform:${t.trim()};transform-origin:50% 100%"` : "";
 };
 function trimSprite(src) {
