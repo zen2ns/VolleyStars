@@ -44,6 +44,7 @@ const CONFIG = {
   epicPower: 130,        // ...or a spike this powerful
   blockHoldMs: 900,      // how long blockers stay up after the ball goes by
   bounceSpikePower: 80,  // spikes this hard that aren't dug slam the floor and bounce away
+  serveBouncePower: 80,  // hard serves this strong (with good/perfect timing) that aren't passed blast the floor and skim away
   // receivers diving to cover a neighbor: chance = (avg of DEF & PER - floor) / scale, capped
   coverStatFloor: 55, coverStatScale: 150, coverMax: 0.3, coverDiveMult: 0.92,
   // extra momentum for cleanly digging a hard spike (power >= first number: +1, >= second: +2)
@@ -438,7 +439,7 @@ Rules.spikeBasePower = (atk, fromPos, inQ, combo, special) => {
 // spiking straight into that row (at the blocker or the receiver behind it) is very
 // likely to get blocked; the next row over has a small chance; the far row none.
 Rules.blockChances = (atk, fromPos, def, targetPos, power) => {
-  if (atk.buffs.spooked || atk.buffs.thunder) return []; // Jack-o'-Lantern / Thunder Set: unblockable
+  if (atk.buffs.spooked) return []; // Jack-o'-Lantern: unblockable
   const fortress = !!def.buffs.fortress;
   if (!fortress && !def.blockerPos) return []; // "No block"
   const spiker = atk.at[fromPos];

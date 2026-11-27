@@ -207,7 +207,7 @@ const CREATURES = [
     classes: ["setter"],
     str: 77, ctrl: 100, def: 69, per: 77,
     passive: { id: "conductor", name: "Conductor", text: "Every spike off its sets is 10% stronger." },
-    active: { id: "thunderSet", name: "Thunder Set", text: "A perfect, lightning-fast set: the next spike gets +25% power and can't be blocked." },
+    active: { id: "thunderSet", name: "Thunder Set", text: "A perfect, lightning-fast set: the next spike gets +25% power and a slower, easier timing bar." },
   },
   {
     id: "stook", name: "Stook", looks: ["assets/creatures/stook.png"], size: 0.8,

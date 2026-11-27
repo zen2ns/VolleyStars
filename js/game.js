@@ -901,14 +901,14 @@ function slowmo(on, x, y) {
 }
 function jumperOf(side, pos) {
   const j = elOf.get(teamOf(side).at[pos]).querySelector(".jumper");
-  j.classList.remove("jump", "dig", "shake", "smash", "hang", "hang-high", "spinup", "crouch", "lean", "ghosting");
+  j.classList.remove("jump", "dig", "shake", "smash", "hang", "hang-high", "crouch-deep", "crouch", "lean", "ghosting");
   void j.offsetWidth;
   return j;
 }
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // Crazy spikes get one of several windups at random (never the same one twice in a row)
-const EPIC_STYLES = ["charge", "skyhigh", "spin", "timestop"];
+const EPIC_STYLES = ["charge", "skyhigh", "quake", "timestop"];
 async function spikeWindup(side, pos, kind) {
   const style = pick(EPIC_STYLES.filter((s) => s !== M.lastEpic));
   M.lastEpic = style;
@@ -945,18 +945,25 @@ async function spikeWindup(side, pos, kind) {
     streaks(hit.x, hit.y - 8, color, 8, 6);
     await flyBall(hit, 300, 0);
     playSprite("sparkle", hit.x, hit.y);
-  } else if (style === "spin") {
-    // spins up into the air while the ball orbits and the ground ripples
-    j.classList.add("spinup");
+  } else if (style === "quake") {
+    // crouches deep while the court rumbles harder and harder, then rockets up
+    j.classList.add("crouch-deep");
     slowmo(true, h.x, h.y);
-    const cx = h.x, cy = h.y - 7;
-    for (let k = 0; k < 10; k++) {
-      const a = (k / 10) * Math.PI * 4;
-      await flyBall({ x: cx + Math.cos(a) * 4.5, y: cy + Math.sin(a) * 6, gy: M.ball.gy }, 75, 0);
-      if (k % 3 === 0) { const f = feet(side, pos); ripple(f.x, f.y, color, 10 + k * 1.5); }
+    const f = feet(side, pos);
+    flyBall({ x: M.ball.x, y: M.ball.y + 2, gy: M.ball.gy }, 300, 0);
+    for (let k = 0; k < 4; k++) {
+      courtShake(k < 2 ? "s" : "m");
+      ripple(f.x, f.y, color, 8 + k * 6);
+      playSprite("puff_dust", f.x + (k % 2 ? 3 : -3), f.y, { anchor: "bottom" });
+      if (k === 3) playSprite("puff_dust", f.x, f.y, { anchor: "bottom", scale: fxScale() + 1 });
+      Sound.play("bump");
+      await wait(200 - k * 30);
     }
-    await flyBall({ x: cx, y: cy - 2, gy: M.ball.gy }, 90, 0);
-    streaks(cx, cy, color, 12, 7);
+    const jj = jumperOf(side, pos);
+    jj.classList.add("hang-high");
+    streaks(f.x, f.y - 4, color, 10, 6);
+    await flyBall({ x: h.x + (side === "player" ? 1.5 : -1.5), y: h.y - 16, gy: M.ball.gy }, 300, 0);
+    await wait(120);
   } else {
     // time stops: the colour drains out, the spiker flickers with afterimages, then BANG
     const sm = $("slowmo");
@@ -1014,7 +1021,7 @@ async function landSpike(side, pos, fl, missed) {
     const from = { ...M.ball };
     streaks((from.x + dest.x) / 2, (from.y + dest.y) / 2, WAVE_COLOR[[...M.fx].pop()] || "#ffffff", 10, 9);
   }
-  await flyBall(dest, missed ? fl.ms * 0.85 : fl.ms, missed ? 0 : fl.arc);
+  await flyBall(dest, missed ? fl.ms * 0.85 : fl.ms, missed ? fl.groundArc || 0 : fl.arc);
   // the explosion goes off on the floor (missed) or at the receiver (dug)
   spikeImpact(missed ? { x: dest.x, y: dest.y - 8, gy: dest.gy } : dest, fl.power, fl.lvl, fl.nuke);
   if (missed) { playSprite("puff_dust", dest.x, dest.y, { anchor: "bottom" }); courtShake(fl.power >= CONFIG.bounceSpikePower ? "m" : "s"); }
@@ -1540,10 +1547,16 @@ async function playRally() {
     return { winner: defSide, reason: `${sideWord(offSide)} ${server.name}'s serve went out` };
   }
   log(`${who(offSide, server)} ${serveType === "hard" ? "rips a hard serve" : "floats a serve"}.`);
-  await flyBall(headPt(defSide, target), serveType === "hard" ? 700 : 1000, serveType === "hard" ? 22 : 32);
-  if (serveType === "hard" && sv.power > 75) courtShake("s");
-
+  // a strong hitter with good timing: the serve may blast into the floor (decided when it lands)
+  const bigServe = serveType === "hard" && (timing === "good" || timing === "perfect") && sv.power >= CONFIG.serveBouncePower;
   let incoming = { fromOpp: true, side: defSide, pos: target, power: sv.power, kind: "serve", aim: 1 };
+  if (bigServe) {
+    Sound.play("whoosh");
+    incoming.flight = { ms: 560, arc: 22, groundArc: 14, power: sv.power, lvl: 0, nuke: false, epic: false, after: null };
+  } else {
+    await flyBall(headPt(defSide, target), serveType === "hard" ? 700 : 1000, serveType === "hard" ? 22 : 32);
+    if (serveType === "hard" && sv.power > 75) courtShake("s");
+  }
 
   // ----- rally loop -----
   while (true) {
@@ -1606,8 +1619,10 @@ async function playRally() {
         anim(rc, "shake");
         const f = feet(side, incoming.pos);
         if (incoming.flight) {
-          pop(side, incoming.pos, incoming.power >= CONFIG.bounceSpikePower ? "Too fast!" : "Missed it!", "bad");
-          await ballBounce(side, incoming.pos, incoming.power);
+          const label = incoming.kind === "serve" ? "ACE!" : incoming.power >= CONFIG.bounceSpikePower ? "Too fast!" : "Missed it!";
+          pop(side, incoming.pos, label, "bad");
+          // a big serve skims away low and fast
+          await ballBounce(side, incoming.pos, incoming.kind === "serve" ? incoming.power + 20 : incoming.power, incoming.kind === "serve");
         } else {
           await flyBall({ x: f.x + (side === "player" ? -4 : 4), y: f.y, gy: f.y }, 250, 0);
           pop(side, incoming.pos, incoming.kind === "serve" ? "ACE!" : "Shanked!", "bad");
@@ -1781,7 +1796,7 @@ async function playRally() {
 
     // ----- spike -----
     if (action.type === "spike") {
-      const jolt = !!T.buffs.jolt;
+      const jolt = !!(T.buffs.jolt || T.buffs.thunder); // Jolt Set / Thunder Set slow the timing bar
       let timing = side === "player" ? await runTiming(hc.ctrl, jolt ? 2 : 1) : action.timing;
       if (side === "cpu" && jolt) timing = { miss: "poor", poor: "ok", ok: "good", good: "perfect", perfect: "perfect" }[timing];
       checkAlive(token);

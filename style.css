@@ -633,8 +633,8 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 /* crazy spike windup styles */
 .crt .jumper.hang-high { animation: hanghigh 0.35s cubic-bezier(.2,.9,.3,1) forwards; }
 @keyframes hanghigh { 0% { transform: translateY(0); } 100% { transform: translateY(-95%) scale(1.06); } }
-.crt .jumper.spinup { animation: spinup 0.85s cubic-bezier(.3,.6,.3,1) forwards; }
-@keyframes spinup { 0% { transform: translateY(0) rotate(0); } 100% { transform: translateY(-55%) rotate(720deg) scale(1.06); } }
+.crt .jumper.crouch-deep { animation: crouchdeep 0.7s ease-out forwards; }
+@keyframes crouchdeep { 0% { transform: none; } 30% { transform: translateY(10%) scale(1.16, 0.78); } 60% { transform: translateY(10%) scale(1.18, 0.76) translateX(-1%); } 80% { transform: translateY(10%) scale(1.18, 0.76) translateX(1%); } 100% { transform: translateY(11%) scale(1.2, 0.74); } }
 .crt .jumper.ghosting img, .crt .jumper.ghosting .bob { filter: drop-shadow(-9px 0 0 #ff4dd2aa) drop-shadow(9px 0 0 #4dfff0aa) drop-shadow(0 -6px 0 #ffffff66); animation: ghostflick 0.12s steps(2) infinite; }
 @keyframes ghostflick { 50% { opacity: 0.75; } }
 #slowmo.timestop { background: radial-gradient(circle at var(--sx, 50%) var(--sy, 50%), transparent 0 7%, #fff1 14%); backdrop-filter: grayscale(1) contrast(1.15); }
