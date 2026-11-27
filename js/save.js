@@ -16,6 +16,12 @@ const Story = (() => {
       ult: null,
     },
     recruits: 0,
+    tokens: 0,                            // Star Tokens, earned by winning story fights
+    skinsOwned: [],                       // bought recolors, as "creatureId:recolorId"
+    skins: {},                            // equipped recolor per creature id (missing = default look)
+    teamName: "My Team",
+    teamLogo: "star",
+    teamColor: "#2f6fdd",
   });
   let s = fresh();
   try {
@@ -38,5 +44,32 @@ const Story = (() => {
     team: () => JSON.parse(JSON.stringify(s.team)),
     saveTeam(slots, looks, ult) { s.team = { slots: { ...slots }, looks: { ...looks }, ult }; save(); },
     reset() { s = fresh(); save(); },
+    // ----- Star Tokens & the Shop -----
+    tokens: () => s.tokens || 0,
+    addTokens(n) { s.tokens = (s.tokens || 0) + n; save(); },
+    ownsSkin: (cid, rid) => (s.skinsOwned || []).includes(cid + ":" + rid),
+    buySkin(cid, rid, price) {
+      if ((s.tokens || 0) < price || Story.ownsSkin(cid, rid)) return false;
+      s.tokens -= price; s.skinsOwned.push(cid + ":" + rid); s.skins[cid] = rid; save(); return true;
+    },
+    // ----- Locker Room -----
+    skin: (cid) => (s.skins || {})[cid] || null,
+    equipSkin(cid, rid) { if (rid) s.skins[cid] = rid; else delete s.skins[cid]; save(); },
+    teamInfo: () => ({ name: s.teamName, logo: s.teamLogo, color: s.teamColor }),
+    setTeamInfo(k, v) { s["team" + k[0].toUpperCase() + k.slice(1)] = v; save(); },
   };
 })();
+
+// ---------- shared helpers for skins and team logos (used by the game, story and Customize screens) ----------
+const logoSrc = (id) => `assets/logos/${id}.png`;
+// A team logo: the white pixel icon on a rounded square of the team color
+function logoCard(logo, color, cls = "") {
+  return `<div class="logo-card ${cls}" style="--lc:${color}"><img src="${logoSrc(logo)}" alt=""></div>`;
+}
+// The picture to show for a Star: its equipped recolor if you own one, else the default look
+function skinImg(c) {
+  const rid = Story.skin(c.id);
+  const r = rid && (c.recolors || []).find((x) => x.id === rid);
+  return r && Story.ownsSkin(c.id, rid) ? r.img : c.looks[0];
+}
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));

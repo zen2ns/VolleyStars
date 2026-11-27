@@ -111,9 +111,9 @@ function trimSprite(src) {
     img.src = src;
   });
 }
-Promise.all(CREATURES.flatMap((c) => c.looks).map(trimSprite)).then(() => { if (!M) renderBuilder(); });
+Promise.all(CREATURES.flatMap((c) => [...c.looks, ...(c.recolors || []).map((r) => r.img)]).map(trimSprite)).then(() => { if (!M) renderBuilder(); });
 
-const lookOf = (c) => spriteSrc(c.looks[builder.looks[c.id] || 0] || c.looks[0]);
+const lookOf = (c) => spriteSrc(skinImg(c)); // the Locker Room skin (or default look)
 const placedPos = (id) => Rules.POSITIONS.find((p) => builder.slots[p] === id);
 const usedCount = (id) => Rules.POSITIONS.filter((p) => builder.slots[p] === id).length;
 const storyLimit = (id) => (builder.mode === "story" ? Story.owned(id) : Infinity);
@@ -149,7 +149,6 @@ function renderRoster() {
     const count = usedCount(c.id);
     card.className = "card" + (builder.selected === c.id ? " selected" : "");
     card.innerHTML = `
-      ${c.looks.length > 1 ? '<button class="look-btn" title="Change look">Look ⇄</button>' : ""}
       ${builder.mode === "story" ? `<span class="on-team${count >= Story.owned(c.id) ? " full" : ""}">${count} / ${Story.owned(c.id)}</span>`
         : count ? `<span class="on-team">×${count}</span>` : ""}
       <img src="${lookOf(c)}" alt="${c.name}"${sizeStyle(c)}>
@@ -160,14 +159,6 @@ function renderRoster() {
           <div class="stat-bar"><div style="width:${c[k]}%;background:${color}"></div></div>
           <span>${c[k]}</span></div>`).join("")}
       <div class="abil"><b>${c.passive.name}</b> (passive)<br><b>${c.active.name}</b> (active)</div>`;
-    const lookBtn = card.querySelector(".look-btn");
-    if (lookBtn) {
-      lookBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        builder.looks[c.id] = ((builder.looks[c.id] || 0) + 1) % c.looks.length;
-        renderBuilder();
-      });
-    }
     card.addEventListener("click", () => {
       builder.selected = builder.selected === c.id ? null : c.id;
       Sound.play("click");
@@ -362,7 +353,8 @@ function startMatch() {
   const at = {};
   Rules.POSITIONS.forEach((p) => {
     const base = byId(builder.slots[p]);
-    at[p] = Rules.makeInstance(base, builder.looks[base.id] || 0);
+    at[p] = Rules.makeInstance(base, 0);
+    at[p].img = skinImg(base);
   });
   matchToken++;
   M = {
@@ -375,6 +367,7 @@ function startMatch() {
     mom: 0, poss: null, fx: new Set(),
     ball: { x: 50, y: 50, gy: 60 },
   };
+  setupTeams();
   $("log").innerHTML = "";
   $("builder").classList.add("hidden");
   $("match").classList.remove("hidden");
@@ -394,6 +387,34 @@ function startMatch() {
   }
   log(`Match start! ${M.serving === "player" ? "You serve" : "CPU serves"} first. First to ${M.pointsToWin}.`);
   matchLoop(matchToken);
+}
+
+// ---------- team identity: names, logos and colors (Story mode) ----------
+function mixHex(hex, to, t) { // blend a "#rrggbb" color toward another by t (0-1)
+  const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const a = p(hex), b = p(to);
+  return "#" + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, "0")).join("");
+}
+function setupTeams() {
+  const story = M.mode === "story";
+  const bt = story ? REGIONS[M.region].battles[M.battle] : null;
+  const me = Story.teamInfo();
+  M.teams = story
+    ? { player: { name: me.name, logo: me.logo, color: me.color }, cpu: { name: bt.name, logo: bt.logo || "ball", color: bt.color || "#d93a3a" } }
+    : { player: { name: "YOU", color: "#1f63c9" }, cpu: { name: "CPU", color: "#c92a3a" } };
+  const root = document.documentElement.style;
+  ["player", "cpu"].forEach((side) => {
+    const col = M.teams[side].color, k = side === "player" ? "you" : "cpu";
+    root.setProperty(`--${k}-c`, col);
+    root.setProperty(`--${k}-l`, mixHex(col, "#ffffff", 0.35)); // lighter, for text and the momentum bar
+    root.setProperty(`--${k}-xl`, mixHex(col, "#ffffff", 0.75));
+  });
+  if (!story) { // Free Play keeps the classic blue vs red
+    root.setProperty("--you-l", "#4fa3ff"); root.setProperty("--cpu-l", "#ff5c6c");
+    root.setProperty("--you-xl", "#bfe6ff"); root.setProperty("--cpu-xl", "#ffd0d4");
+  }
+  document.querySelector(".score-box.you .label").textContent = story ? me.name : "YOU";
+  document.querySelector(".score-box.cpu .label").textContent = story ? bt.name : "CPU";
 }
 
 function buildCourt() {
@@ -577,7 +598,8 @@ function setMomentum(v) {
   const pct = (Math.abs(M.mom) / CONFIG.momentumMax) * 50;
   fill.style.width = pct + "%";
   fill.style.left = (M.mom >= 0 ? 50 - pct : 50) + "%";
-  const col = M.mom >= 0 ? (M.mom >= 5 ? "#bfe6ff" : "#4fa3ff") : (M.mom <= -5 ? "#ffd0d4" : "#ff5c6c");
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const col = M.mom >= 0 ? css(M.mom >= 5 ? "--you-xl" : "--you-l") : css(M.mom <= -5 ? "--cpu-xl" : "--cpu-l");
   fill.style.background = col;
   fill.style.boxShadow = Math.abs(M.mom) >= 3 ? `0 0 12px ${col}` : "none";
   updateFlames();
@@ -1434,7 +1456,28 @@ function runTiming(ctrl, slow = 1) {
 }
 
 // ---------- match flow ----------
+// Story mode: the two teams' logos slide in with a big VS
+async function versusIntro() {
+  const v = $("vsIntro");
+  const side = (t) => `${logoCard(t.logo, t.color, "huge")}<div class="vs-name" style="--lc:${t.color}">${escapeHtml(t.name)}</div>`;
+  $("vsLeft").innerHTML = side(M.teams.player);
+  $("vsRight").innerHTML = side(M.teams.cpu);
+  v.classList.remove("hidden", "out");
+  void v.offsetWidth;
+  v.classList.add("in");
+  Sound.play("whoosh");
+  await wait(550);
+  Sound.play("block");
+  courtShake("s");
+  await wait(1600);
+  v.classList.add("out");
+  await wait(350);
+  v.classList.add("hidden");
+  v.classList.remove("in", "out");
+}
+
 async function intro() {
+  if (M.mode === "story") await versusIntro();
   const el = $("intro");
   el.classList.remove("hidden");
   el.className = "intro";

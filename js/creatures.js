@@ -14,7 +14,8 @@
 //
 //  The ability "id"s connect to code in js/rules.js, so change the names and
 //  descriptions freely, but keep the ids the same unless you ask for new abilities.
-//  "looks" is a list of pictures you can choose between on the team screen.
+//  "looks" is the default picture. "recolors" are extra skins bought in the Shop with Star Tokens
+//  and picked in the Locker Room: { id, name, img }.
 //  "size": optional on-court size multiplier for small drawings (1 if left out).
 //  "faces": which way the drawing looks ("left" if left out). The game flips sprites so
 //  every creature faces the net.
@@ -82,7 +83,8 @@ const CREATURES = [
     active: { id: "sneakySeed", name: "Sneaky Seed", text: "On the 2nd touch, attack right away instead of setting. Catches the other team off guard." },
   },
   {
-    id: "moofle", name: "Moofle", looks: ["assets/creatures/moofle.png", "assets/creatures/moofle_female.png"],
+    id: "moofle", name: "Moofle", looks: ["assets/creatures/moofle_female.png"],
+    recolors: [{ id: "cocoa", name: "Cocoa", img: "assets/creatures/recolors/moofle_cocoa.png" }],
     classes: ["receiver"],
     rank: "D",
     str: 51, ctrl: 48, def: 59, per: 62,
@@ -107,6 +109,7 @@ const CREATURES = [
   },
   {
     id: "desacti", name: "Desacti", looks: ["assets/creatures/desacti.png"],
+    recolors: [{ id: "deepsea", name: "Deep Sea", img: "assets/creatures/recolors/desacti_deepsea.png" }],
     classes: ["receiver"],
     rank: "B",
     str: 48, ctrl: 69, def: 82, per: 77,
@@ -115,6 +118,7 @@ const CREATURES = [
   },
   {
     id: "volcobra", name: "Volcobra", looks: ["assets/creatures/volcobra.png"],
+    recolors: [{ id: "jade", name: "Jade Flame", img: "assets/creatures/recolors/volcobra_jade.png" }],
     rank: "S",
     classes: ["spiker"],
     str: 100, ctrl: 95, def: 84, per: 87,
@@ -123,6 +127,7 @@ const CREATURES = [
   },
   {
     id: "aquero", name: "Aquero", looks: ["assets/creatures/aquero.png"],
+    recolors: [{ id: "reef", name: "Reef", img: "assets/creatures/recolors/aquero_reef.png" }],
     rank: "C",
     classes: ["receiver"],
     str: 51, ctrl: 62, def: 68, per: 67,
@@ -130,7 +135,8 @@ const CREATURES = [
     active: { id: "highTide", name: "High Tide", text: "For this rally, your whole team receives better, and every good pass adds +1 extra momentum." },
   },
   {
-    id: "aquivern", name: "Aquivern", looks: ["assets/creatures/aquivern.png"], faces: "right",
+    id: "aquivern", name: "Aquivern", looks: ["assets/creatures/aquivern.png"],
+    recolors: [{ id: "kelp", name: "Kelp", img: "assets/creatures/recolors/aquivern_kelp.png" }], faces: "right",
     rank: "A",
     classes: ["receiver"],
     str: 69, ctrl: 83, def: 89, per: 83,
@@ -138,7 +144,8 @@ const CREATURES = [
     active: { id: "slipstream", name: "Slipstream", text: "For this rally, when Aquivern passes, the ball rides a current: your team's next spike gets +25% power." },
   },
   {
-    id: "bramblet", name: "Bramblet", looks: ["assets/creatures/bramblet.png"], faces: "right",
+    id: "bramblet", name: "Bramblet", looks: ["assets/creatures/bramblet.png"],
+    recolors: [{ id: "ember", name: "Ember", img: "assets/creatures/recolors/bramblet_ember.png" }], faces: "right",
     rank: "B",
     classes: ["receiver"],
     str: 66, ctrl: 62, def: 76, per: 72,
@@ -154,7 +161,8 @@ const CREATURES = [
     active: { id: "greatWall", name: "Great Wall", text: "For this rally, when Bramblehorn blocks it guards all three rows at full head-on strength." },
   },
   {
-    id: "rokanock", name: "Rokanock", looks: ["assets/creatures/rokanock.png"], faces: "right",
+    id: "rokanock", name: "Rokanock", looks: ["assets/creatures/rokanock.png"],
+    recolors: [{ id: "shadow", name: "Shadow", img: "assets/creatures/recolors/rokanock_shadow.png" }], faces: "right",
     rank: "C",
     classes: ["spiker"],
     str: 76, ctrl: 62, def: 53, per: 58,
@@ -163,6 +171,7 @@ const CREATURES = [
   },
   {
     id: "frillet", name: "Frillet", looks: ["assets/creatures/frillet.png"],
+    recolors: [{ id: "bog", name: "Bog", img: "assets/creatures/recolors/frillet_bog.png" }],
     rank: "D",
     classes: ["receiver"],
     str: 45, ctrl: 55, def: 61, per: 59,
@@ -170,7 +179,8 @@ const CREATURES = [
     active: { id: "splashGuard", name: "Splash Guard", text: "For this rally, the next spike hit into Frillet's row loses 25% of its power to a splash of water." },
   },
   {
-    id: "malull", name: "Malull", looks: ["assets/creatures/malull.png"], size: 0.5,
+    id: "malull", name: "Malull", looks: ["assets/creatures/malull.png"],
+    recolors: [{ id: "bubblegum", name: "Bubblegum", img: "assets/creatures/recolors/malull_bubblegum.png" }], size: 0.5,
     rank: "D",
     classes: ["receiver"],
     str: 44, ctrl: 50, def: 69, per: 58,
@@ -179,6 +189,7 @@ const CREATURES = [
   },
   {
     id: "frostone", name: "Frostone", looks: ["assets/creatures/frostone.png"],
+    recolors: [{ id: "rose", name: "Rose", img: "assets/creatures/recolors/frostone_rose.png" }],
     rank: "C",
     classes: ["receiver"],
     str: 51, ctrl: 55, def: 79, per: 64,
@@ -186,7 +197,8 @@ const CREATURES = [
     active: { id: "snowdrift", name: "Snowdrift", text: "For this rally, every spike hit into Frostone's row loses 25% of its power." },
   },
   {
-    id: "cryolith", name: "Cryolith", looks: ["assets/creatures/cryolith.png"], faces: "right",
+    id: "cryolith", name: "Cryolith", looks: ["assets/creatures/cryolith.png"],
+    recolors: [{ id: "rose", name: "Rose Quartz", img: "assets/creatures/recolors/cryolith_rose.png" }], faces: "right",
     rank: "A",
     classes: ["receiver"],
     str: 69, ctrl: 69, def: 100, per: 85,
@@ -195,6 +207,7 @@ const CREATURES = [
   },
   {
     id: "timbolt", name: "Timbolt", looks: ["assets/creatures/timbolt.png"],
+    recolors: [{ id: "copper", name: "Copper", img: "assets/creatures/recolors/timbolt_copper.png" }],
     rank: "C",
     classes: ["setter"],
     str: 56, ctrl: 78, def: 53, per: 62,
@@ -203,6 +216,7 @@ const CREATURES = [
   },
   {
     id: "thundroak", name: "Thundroak", looks: ["assets/creatures/thundroak.png"],
+    recolors: [{ id: "violet", name: "Violet Storm", img: "assets/creatures/recolors/thundroak_violet.png" }],
     rank: "A",
     classes: ["setter"],
     str: 77, ctrl: 100, def: 69, per: 77,
@@ -210,7 +224,8 @@ const CREATURES = [
     active: { id: "thunderSet", name: "Thunder Set", text: "A perfect, lightning-fast set: the next spike gets +25% power and a slower, easier timing bar." },
   },
   {
-    id: "stook", name: "Stook", looks: ["assets/creatures/stook.png"], size: 0.8,
+    id: "stook", name: "Stook", looks: ["assets/creatures/stook.png"],
+    recolors: [{ id: "aqua", name: "Aqua", img: "assets/creatures/recolors/stook_aqua.png" }], size: 0.8,
     rank: "D",
     classes: ["setter"],
     str: 61, ctrl: 63, def: 44, per: 52,
@@ -219,6 +234,7 @@ const CREATURES = [
   },
   {
     id: "arbur", name: "Arbur", looks: ["assets/creatures/arbur.png"],
+    recolors: [{ id: "glacier", name: "Glacier", img: "assets/creatures/recolors/arbur_glacier.png" }],
     rank: "B",
     classes: ["setter"],
     str: 62, ctrl: 87, def: 59, per: 69,
@@ -226,7 +242,8 @@ const CREATURES = [
     active: { id: "frostfireSet", name: "Frostfire Set", text: "A perfect set. The spike Burns whoever it's hit at; if it gets blocked, the blocker is Chilled instead." },
   },
   {
-    id: "lochlo", name: "Lochlo", looks: ["assets/creatures/lochlo.png"], size: 0.7,
+    id: "lochlo", name: "Lochlo", looks: ["assets/creatures/lochlo.png"],
+    recolors: [{ id: "lime", name: "Lime", img: "assets/creatures/recolors/lochlo_lime.png" }], size: 0.85, faces: "right",
     rank: "D",
     classes: ["setter"],
     str: 50, ctrl: 69, def: 47, per: 55,
@@ -234,7 +251,8 @@ const CREATURES = [
     active: { id: "undertowSet", name: "Undertow Set", text: "A set so quick the other team's block goes up late: their block chance is halved on this spike." },
   },
   {
-    id: "zaplet", name: "Zaplet", looks: ["assets/creatures/zaplet.png"], size: 0.6, faces: "right",
+    id: "zaplet", name: "Zaplet", looks: ["assets/creatures/zaplet.png"],
+    recolors: [{ id: "ember", name: "Ember", img: "assets/creatures/recolors/zaplet_ember.png" }], size: 0.78,
     rank: "D",
     classes: ["receiver"],
     str: 44, ctrl: 52, def: 66, per: 61,
@@ -242,7 +260,8 @@ const CREATURES = [
     active: { id: "jumpstart", name: "Jumpstart", text: "Use right after Zaplet digs a spike: that pass gets a little better." },
   },
   {
-    id: "zigazolt", name: "Zigazolt", looks: ["assets/creatures/zigazolt.png"], size: 0.85,
+    id: "zigazolt", name: "Zigazolt", looks: ["assets/creatures/zigazolt.png"],
+    recolors: [{ id: "ember", name: "Ember", img: "assets/creatures/recolors/zigazolt_ember.png" }], size: 1.3, faces: "right",
     rank: "B",
     classes: ["receiver"],
     str: 55, ctrl: 63, def: 86, per: 72,
@@ -250,7 +269,8 @@ const CREATURES = [
     active: { id: "overcharge", name: "Overcharge", text: "Use right after Zigazolt digs a spike: that pass gets better, and your next spike gets a slower, easier timing bar." },
   },
   {
-    id: "rexlet", name: "Rexlet", looks: ["assets/creatures/rexlet.png"], size: 0.7,
+    id: "rexlet", name: "Rexlet", looks: ["assets/creatures/rexlet.png"],
+    recolors: [{ id: "grape", name: "Grape", img: "assets/creatures/recolors/rexlet_grape.png" }], size: 0.85,
     rank: "D",
     classes: ["spiker"],
     str: 74, ctrl: 55, def: 47, per: 45,

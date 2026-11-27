@@ -6,6 +6,7 @@
 let storyRegion = 0; // which region the story screen is showing
 
 function renderStory() {
+  refreshTokenBadges();
   // pick the furthest open region the first time
   if (!Story.regionOpen(storyRegion)) storyRegion = 0;
 
@@ -78,7 +79,7 @@ function renderStory() {
   owned.forEach((c) => {
     const el = document.createElement("div");
     el.className = "col-item";
-    el.innerHTML = `<img src="${spriteSrc(c.looks[0])}" alt=""${sizeStyle(c)}><div>${rankHTML(c)} ${c.name}</div><b>×${Story.owned(c.id)}</b>`;
+    el.innerHTML = `<img src="${spriteSrc(skinImg(c))}" alt=""${sizeStyle(c)}><div>${rankHTML(c)} ${c.name}</div><b>×${Story.owned(c.id)}</b>`;
     attachTooltip(el, () => c);
     col.appendChild(el);
   });
@@ -103,8 +104,11 @@ function showStoryEnd(won) {
   }
   const wasNew = Story.progress(r) <= b;
   Story.beat(r, b);
+  const earned = storyTokens(r, !!bt.champion, wasNew);
+  Story.addTokens(earned);
   $("endTitle").textContent = bt.champion ? `${reg.name} Champion! 🏆` : "Victory!";
-  $("endScore").textContent = `${bt.name}: ${M.score.player} – ${M.score.cpu}. Time to recruit!`;
+  $("endScore").innerHTML = `${escapeHtml(bt.name)}: ${M.score.player} – ${M.score.cpu}. Time to recruit!
+    <div class="token-earn"><span class="token-icon">★</span> +${earned} Star Tokens${wasNew ? "" : " (replay)"} · ${Story.tokens()} total</div>`;
   $("playAgain").textContent = "Recruit!";
   $("endSecond").textContent = "Skip recruiting";
   const after = () => championRewards(r, b, wasNew);

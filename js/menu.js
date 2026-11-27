@@ -2,12 +2,15 @@
 //  VolleyStars main menu, the Path, and Settings.
 // =====================================================================
 
-const SCREENS = ["menu", "story", "settings", "builder", "match"];
+const SCREENS = ["menu", "story", "settings", "builder", "match", "customize", "shop", "locker"];
 function showScreen(id) {
   SCREENS.forEach((s) => $(s).classList.toggle("hidden", s !== id));
   tip.classList.add("hidden");
   if (id === "story") renderStory();
   if (id === "settings") renderSettings();
+  if (id === "customize") renderCustomize();
+  if (id === "shop") renderShop();
+  if (id === "locker") renderLocker();
   Parade.active(id === "menu");
 }
 document.querySelectorAll(".back-btn[data-go]").forEach((b) =>
@@ -52,6 +55,9 @@ $("resetPath").addEventListener("click", () => {
 $("menuFree").addEventListener("click", () => { Sound.play("click"); enterBuilder("free"); });
 $("menuStory").addEventListener("click", () => { Sound.play("click"); showScreen("story"); });
 $("menuSettings").addEventListener("click", () => { Sound.play("click"); showScreen("settings"); });
+$("menuCustomize").addEventListener("click", () => { Sound.play("click"); showScreen("customize"); });
+$("goShop").addEventListener("click", () => { Sound.play("click"); showScreen("shop"); });
+$("goLocker").addEventListener("click", () => { Sound.play("click"); showScreen("locker"); });
 $("builderBack").addEventListener("click", () => { Sound.play("click"); showScreen(builder.mode === "story" ? "story" : "menu"); });
 
 // ---------- the parade: creatures run across the bottom of the menu ----------
@@ -67,7 +73,7 @@ const Parade = (() => {
     const facesRight = (c.faces || "left") === "right";
     const flip = (dir > 0) !== facesRight; // look the way it's running
     el.innerHTML = `<div class="runner-hop" style="animation-duration:${(0.32 + Math.random() * 0.1).toFixed(2)}s">
-      <img src="${spriteSrc(c.looks[Math.floor(Math.random() * c.looks.length)])}" alt="" style="${flip ? "transform:scaleX(-1)" : ""}"></div>
+      <img src="${spriteSrc(skinImg(c))}" alt="" style="${flip ? "transform:scaleX(-1)" : ""}"></div>
       ${withBall ? '<img class="runner-ball" src="assets/volleyball.png" alt="">' : ""}`;
     const dur = 5 + Math.random() * 3;
     el.style.animation = `${dir > 0 ? "runRight" : "runLeft"} ${dur}s linear ${delay}s forwards`;
