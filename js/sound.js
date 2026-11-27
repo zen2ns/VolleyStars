@@ -66,6 +66,7 @@ const Sound = (() => {
   // ---------- sound effects ----------
   const SFX = {
     click: () => tone(900, 0.04, { vol: 0.12 }),
+    tick: () => { tone(1800, 0.03, { type: "triangle", vol: 0.18 }); tone(1200, 0.05, { type: "sine", vol: 0.12, delay: 0.02 }); },
     serve: () => { noise(0.08, { freq: 2500, type: "highpass", vol: 0.25 }); tone(300, 0.1, { slideTo: 520, vol: 0.15 }); },
     bump: () => { tone(330, 0.07, { vol: 0.18 }); tone(220, 0.08, { type: "triangle", vol: 0.25 }); },
     set: () => tone(523, 0.1, { slideTo: 700, vol: 0.16 }),

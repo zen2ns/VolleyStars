@@ -899,34 +899,106 @@ function slowmo(on, x, y) {
   if (on) { el.style.setProperty("--sx", x + "%"); el.style.setProperty("--sy", y + "%"); }
   el.classList.toggle("on", on);
 }
-async function spikeWindup(side, pos, kind) {
-  const c = teamOf(side).at[pos];
-  const h = headPt(side, pos);
-  const j = elOf.get(c).querySelector(".jumper");
-  j.classList.remove("jump", "dig", "shake", "smash");
+function jumperOf(side, pos) {
+  const j = elOf.get(teamOf(side).at[pos]).querySelector(".jumper");
+  j.classList.remove("jump", "dig", "shake", "smash", "hang", "hang-high", "spinup", "crouch", "lean", "ghosting");
   void j.offsetWidth;
-  j.classList.add("hang"); // floats up and hangs in the air
-  slowmo(true, h.x, h.y);
-  Sound.play("ult");
+  return j;
+}
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// Crazy spikes get one of several windups at random (never the same one twice in a row)
+const EPIC_STYLES = ["charge", "skyhigh", "spin", "timestop"];
+async function spikeWindup(side, pos, kind) {
+  const style = pick(EPIC_STYLES.filter((s) => s !== M.lastEpic));
+  M.lastEpic = style;
+  const j = jumperOf(side, pos);
+  const h = headPt(side, pos);
   const color = WAVE_COLOR[kind] || "#ffd65c";
   const r = $("court").getBoundingClientRect();
-  const lift = flyBall({ x: M.ball.x, y: M.ball.y - 6, gy: M.ball.gy }, 820, 0);
-  // energy gathering into the ball
-  const charge = setInterval(() => {
-    if (!M) return;
-    for (let i = 0; i < 3; i++) {
-      const a = Math.random() * Math.PI * 2, d = 6 + Math.random() * 5;
-      const ox = Math.cos(a) * d, oy = Math.sin(a) * d * 2;
-      particle(M.ball.x + ox, M.ball.y + oy, "spark", [(-ox * r.width) / 100, (-oy * r.height) / 100], color);
+  const toPx = (dx, dy) => [(dx * r.width) / 100, (dy * r.height) / 100];
+  Sound.play("ult");
+
+  if (style === "charge") {
+    // hangs in the air while energy gathers into the ball
+    j.classList.add("hang");
+    slowmo(true, h.x, h.y);
+    const lift = flyBall({ x: M.ball.x, y: M.ball.y - 6, gy: M.ball.gy }, 820, 0);
+    const charge = setInterval(() => {
+      if (!M) return;
+      for (let i = 0; i < 3; i++) {
+        const a = Math.random() * Math.PI * 2, d = 6 + Math.random() * 5;
+        const ox = Math.cos(a) * d, oy = Math.sin(a) * d * 2;
+        particle(M.ball.x + ox, M.ball.y + oy, "spark", toPx(-ox, -oy), color);
+      }
+    }, 90);
+    try { await lift; } finally { clearInterval(charge); }
+    await wait(120);
+  } else if (style === "skyhigh") {
+    // tosses the ball sky-high, leaps after it and hammers it down like a meteor
+    slowmo(true, h.x, Math.max(h.y - 25, 5));
+    const top = { x: M.ball.x, y: -6, gy: M.ball.gy };
+    await flyBall(top, 420, 0);
+    j.classList.add("hang-high");
+    await wait(380);
+    const hit = { x: h.x + (side === "player" ? 2 : -2), y: h.y - 14, gy: M.ball.gy };
+    streaks(hit.x, hit.y - 8, color, 8, 6);
+    await flyBall(hit, 300, 0);
+    playSprite("sparkle", hit.x, hit.y);
+  } else if (style === "spin") {
+    // spins up into the air while the ball orbits and the ground ripples
+    j.classList.add("spinup");
+    slowmo(true, h.x, h.y);
+    const cx = h.x, cy = h.y - 7;
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 4;
+      await flyBall({ x: cx + Math.cos(a) * 4.5, y: cy + Math.sin(a) * 6, gy: M.ball.gy }, 75, 0);
+      if (k % 3 === 0) { const f = feet(side, pos); ripple(f.x, f.y, color, 10 + k * 1.5); }
     }
-  }, 90);
-  try { await lift; } finally { clearInterval(charge); }
-  await wait(120);
-  j.classList.remove("hang");
-  void j.offsetWidth;
-  j.classList.add("smash");
+    await flyBall({ x: cx, y: cy - 2, gy: M.ball.gy }, 90, 0);
+    streaks(cx, cy, color, 12, 7);
+  } else {
+    // time stops: the colour drains out, the spiker flickers with afterimages, then BANG
+    const sm = $("slowmo");
+    sm.classList.add("timestop");
+    slowmo(true, h.x, h.y);
+    j.classList.add("hang", "ghosting");
+    await flyBall({ x: M.ball.x, y: M.ball.y - 4, gy: M.ball.gy }, 250, 0);
+    for (let k = 0; k < 3; k++) {
+      await wait(180);
+      Sound.play("tick");
+      ripple(M.ball.x, M.ball.y, "#ffffff", 4 + k * 3);
+    }
+    await wait(120);
+    sm.classList.remove("timestop");
+  }
+  const jj = jumperOf(side, pos);
+  jj.classList.add("smash");
   slowmo(false);
   flash("#ffffff");
+}
+
+// Normal spikes: a quick, slightly different little windup each time so the hit reads
+async function quickWindup(side, pos) {
+  const j = jumperOf(side, pos);
+  const h = headPt(side, pos);
+  const style = pick(["hop", "lean", "toss"]);
+  j.style.setProperty("--lean", side === "player" ? "-14deg" : "14deg");
+  if (style === "hop") {
+    j.classList.add("crouch");
+    await wait(90 + Math.random() * 50);
+    flyBall({ x: h.x, y: h.y - 4, gy: M.ball.gy }, 140, 0);
+    await wait(80);
+  } else if (style === "lean") {
+    j.classList.add("lean");
+    await flyBall({ x: h.x - (side === "player" ? 1 : -1), y: h.y - 3, gy: M.ball.gy }, 150 + Math.random() * 60, 0);
+  } else {
+    await flyBall({ x: h.x, y: h.y - 6 - Math.random() * 2, gy: M.ball.gy }, 180, 0);
+    j.classList.add("crouch");
+    await wait(60);
+  }
+  jumperOf(side, pos);
+  anim(teamOf(side).at[pos], "jump");
 }
 // Where a spike that beats the receiver hits the floor: just in front of them
 function groundPt(side, pos) {
@@ -1714,7 +1786,6 @@ async function playRally() {
       if (side === "cpu" && jolt) timing = { miss: "poor", poor: "ok", ok: "good", good: "perfect", perfect: "perfect" }[timing];
       checkAlive(token);
       const t = CONFIG.timing[timing];
-      anim(hc, "jump");
       pop(side, holder, t.label, timing === "perfect" ? "big" : timing === "poor" || timing === "miss" ? "bad" : "good");
       const comboAtHit = levelFor(side);
       swing(side, t.combo, holder);
@@ -1737,20 +1808,22 @@ async function playRally() {
       }
       // who goes up to block: the chosen blocker, or the whole front row under Iron Fortress
       M.blockEls = O.buffs.fortress ? Rules.FRONT.map((bp) => elOf.get(O.at[bp])) : O.blockerPos ? [elOf.get(O.at[O.blockerPos])] : [];
-      Sound.play("spike");
-      await wait(180);
-      setHolder(null);
+      // the outcome is decided now, then played out
       const res = Rules.spike(T, holder, q, O, action.target, timing, action.special, comboAtHit);
       const wasNuke = !!T.nuke;
       T.nuke = false;
       Rules.clearRecovering(T); // the attackers' own blocker is back in position
       O.blockerPos = null;
-      popPassives(side, holder, res.passives);
-      updateStatus();
       const tgt = headPt(other(side), action.target);
       const lvl = levelFor(side);
       const epic = !res.out && (wasNuke || lvl >= CONFIG.epicLevel || res.power >= CONFIG.epicPower);
       if (epic) await spikeWindup(side, holder, [...M.fx].pop() || (wasNuke ? "fire" : "spark"));
+      else await quickWindup(side, holder);
+      checkAlive(token);
+      Sound.play("spike");
+      setHolder(null);
+      popPassives(side, holder, res.passives);
+      updateStatus();
       if (res.power >= CONFIG.boomPower || epic) Sound.play("whoosh");
       if (res.out) {
         raiseBlock();

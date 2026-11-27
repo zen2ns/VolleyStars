@@ -395,8 +395,8 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .crt.pick-block .bob { animation: sway 2.4s ease-in-out infinite, blockPulse 0.8s ease-in-out infinite; }
 @keyframes blockPulse { 0%, 100% { filter: drop-shadow(0 0 2px #7ad8ff) drop-shadow(0 0 4px #4fa3ff); } 50% { filter: drop-shadow(0 0 4px #bfeaff) drop-shadow(0 0 16px #4fa3ff); } }
 .crt.pick-block:hover .jumper { transform: translateY(-12%); }
-.crt.blocking .jumper { transform: translateY(-24%) scale(1.14); transition: transform 0.2s; }
-.crt.blockup .jumper { transform: translateY(-46%) scale(1.16); transition: transform 0.12s ease-out; }
+.crt.blocking .jumper, .crt.blocking:hover .jumper { transform: translateY(-24%) scale(1.14); transition: transform 0.2s; }
+.crt.blockup .jumper, .crt.blockup:hover .jumper { transform: translateY(-46%) scale(1.16); transition: transform 0.12s ease-out; }
 .crt .jumper { transition: transform 0.35s ease-in; }
 .crt.blocking .bob { filter: drop-shadow(0 0 3px #bfeaff) drop-shadow(0 0 12px #4fa3ff); }
 .crt.fortress .bob { filter: drop-shadow(0 0 3px #e0f2ff) drop-shadow(0 0 14px #7ab8ff); }
@@ -629,3 +629,15 @@ select { background: var(--panel-2); color: var(--text); border: 1px solid #ffff
 .crt .jumper.smash { animation: smash 0.35s ease-in; }
 @keyframes smash { 0% { transform: translateY(-58%) rotate(0deg); } 30% { transform: translateY(-50%) rotate(8deg) scale(1.1, 0.9); } 100% { transform: translateY(0); } }
 .abil-btn.boost { background: linear-gradient(#8fd0ff, #3f7fd0); color: #fff; border-color: #dff4ff; box-shadow: 0 0 14px #4fc3ff; }
+
+/* crazy spike windup styles */
+.crt .jumper.hang-high { animation: hanghigh 0.35s cubic-bezier(.2,.9,.3,1) forwards; }
+@keyframes hanghigh { 0% { transform: translateY(0); } 100% { transform: translateY(-95%) scale(1.06); } }
+.crt .jumper.spinup { animation: spinup 0.85s cubic-bezier(.3,.6,.3,1) forwards; }
+@keyframes spinup { 0% { transform: translateY(0) rotate(0); } 100% { transform: translateY(-55%) rotate(720deg) scale(1.06); } }
+.crt .jumper.ghosting img, .crt .jumper.ghosting .bob { filter: drop-shadow(-9px 0 0 #ff4dd2aa) drop-shadow(9px 0 0 #4dfff0aa) drop-shadow(0 -6px 0 #ffffff66); animation: ghostflick 0.12s steps(2) infinite; }
+@keyframes ghostflick { 50% { opacity: 0.75; } }
+#slowmo.timestop { background: radial-gradient(circle at var(--sx, 50%) var(--sy, 50%), transparent 0 7%, #fff1 14%); backdrop-filter: grayscale(1) contrast(1.15); }
+/* normal spike windups */
+.crt .jumper.crouch { transform: translateY(6%) scale(1.1, 0.86); transition: transform 0.08s ease-out; }
+.crt .jumper.lean { transform: translateY(-8%) rotate(var(--lean, -14deg)); transition: transform 0.15s ease-out; }
